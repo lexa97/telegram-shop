@@ -8,6 +8,6 @@ alwaysApply: true
 - Следуйте skill **pr-memory-graphify** (`.cursor/skills/pr-memory-graphify/SKILL.md` или `/pr-memory-graphify`):
   - **PR готов** → обновить `docs/MEMORY.md` (сделали, обсуждали, **отвергли**), коммит в ветку PR.
   - **PR смержен в main** → `./devtools/graphify/refresh-after-merge.sh`, коммит `graphify-out/`, пометка в MEMORY.
-- Перед крупными изменениями читайте `docs/MEMORY.md`.
+- Перед доработками читайте `docs/AGENT_CODEBASE.md` (модули, API, сценарии); журнал — `docs/MEMORY.md`.
 - Структура кода — **Graphify** (`.cursor/rules/graphify.mdc`); полная пересборка графа — после merge, не на каждый PR-draft.
 - Стек и запуск бота — `README.md`.
