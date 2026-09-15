@@ -15,6 +15,38 @@
 
 ---
 
+## 2026-09-15 — ТЗ-02: домен заказов (жизненный цикл, snapshot)
+
+**Ветка:** `cursor/orders-domain-54d7` → `main`  
+**PR:** (создаётся)
+
+### Сделали
+
+- Модели `Order`, `OrderStatusHistory`; статусы `CREATED`…`REFUNDED`, суммы в **копейках** (`BIGINT`).
+- Сервис переходов (`bot/database/methods/orders.py`): матрица переходов, snapshot при создании, `profit` при `COMPLETED`, TTL-хелпер `expire_created_if_due`, идемпотентный ручной refund на баланс, запрет user-cancel для оплаченных.
+- `BoughtGoods.order_id` (nullable FK); Alembic `e9f0a1b2c3d4`.
+- Хелперы `bot/database/money.py` (мост до ТЗ-01); тесты `tests/test_orders.py`.
+
+### Обсуждали
+
+- Покупка через `buy_item_transaction` пока **без** привязки к `Order` — сделает ТЗ-06 (fulfillment).
+- Refund кредитует `User.balance` в рублях (`Decimal`) до миграции копеек в ТЗ-01.
+
+### Отвергли
+
+- *Менять flow покупки в этом PR* — *причина:* scope ТЗ-02 только модель и сервис статусов.
+
+### Проверка
+
+- `pytest tests/test_orders.py`
+- `alembic upgrade head` (таблицы `orders`, `order_status_history`).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-15 — Декомпозиция ТЗ Telegram-магазина цифровых товаров
 
 **Ветка:** `cursor/tz-subagent-docs-fdff` → `main`  
