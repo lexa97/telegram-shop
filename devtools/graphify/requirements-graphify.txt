@@ -1,0 +1,2 @@
+# Опционально: pip install в dev-venv (лучше uv tool install graphifyy)
+graphifyy==0.9.61

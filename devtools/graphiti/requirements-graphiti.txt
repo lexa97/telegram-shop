@@ -1,3 +1,0 @@
-# Dev-only: не входит в образ бота. Установка в отдельном venv.
-graphiti-core==0.30.2
-python-dotenv==1.0.1

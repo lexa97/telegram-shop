@@ -8,7 +8,7 @@
 - **Решения** — что выбрали и почему (1–3 предложения).
 - **Обсуждения** — открытые вопросы и ответы, когда появятся.
 - **Результаты** — что смержено, как проверить, ссылки на PR/коммиты.
-- **Граф знаний (Graphiti)** — после `devtools/graphiti/index_project.py` факты о коде дублируются в Neo4j; сюда пишем только то, что важно для *наших* задач поверх upstream-репозитория.
+- **Граф кода (Graphify)** — артефакты в `graphify-out/`; пересборка: `graphify update .` (локально, без API). Сюда пишем только *наши* решения поверх upstream.
 
 ---
 
@@ -20,8 +20,8 @@
 
 ### Что сделали
 
-- Подключена **инфраструктура Graphiti** в `devtools/graphiti/` (Neo4j в Docker, скрипты индексации и поиска).
-- Создан этот файл **MEMORY.md** и правило Cursor `.cursor/rules/project-memory.mdc`.
+- Подключён **Graphify** (`graphifyy`): граф в `graphify-out/`, скрипт `devtools/graphify/build-graph.sh`, правила Cursor `graphify.mdc` + `project-memory.mdc`.
+- Убрана ошибочная заготовка под Graphiti (Neo4j/OpenAI) — не нужна для нашего сценария.
 
 ### Стек (кратко)
 
@@ -74,14 +74,21 @@ alembic upgrade head
 python run.py
 ```
 
-### Graphiti (граф по коду)
+### Graphify (граф по коду, локально)
 
-См. `devtools/graphiti/README.md`. Нужны: Neo4j, `OPENAI_API_KEY` (или другой LLM по документации Graphiti).
+```bash
+uv tool install graphifyy   # или pipx
+graphify update .
+graphify cluster-only . --no-label
+graphify query "payment handlers" --graph graphify-out/graph.json
+```
+
+Подробнее: `devtools/graphify/README.md`. Интерактив: `graphify-out/graph.html`.
 
 ### Открытые вопросы
 
 - [ ] Какие доработки продукта в приоритете после подготовки?
-- [ ] Использовать Graphiti MCP в Cursor или только CLI-скрипты?
+- [ ] Нужен ли MCP `python -m graphify.serve graphify-out/graph.json` в Cursor?
 
 ---
 
