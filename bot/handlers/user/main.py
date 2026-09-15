@@ -194,7 +194,8 @@ async def profile_callback_handler(call: CallbackQuery, state: FSMContext):
         await call.answer(localize("errors.something_wrong"), show_alert=True)
         return
 
-    balance = user_info.get('balance')
+    from bot.money import format_cents_for_ui
+    balance = format_cents_for_ui(int(user_info.get('balance') or 0))
     overall_balance, items, cart_count = await asyncio.gather(
         select_user_operations_total(user_id),
         select_user_items(user_id),
@@ -207,7 +208,7 @@ async def profile_callback_handler(call: CallbackQuery, state: FSMContext):
         f"{localize('profile.caption', name=_esc(tg_user.first_name or ''), id=user_id)}\n"
         f"{localize('profile.id', id=user_id)}\n"
         f"{localize('profile.balance', amount=balance, currency=EnvKeys.PAY_CURRENCY)}\n"
-        f"{localize('profile.total_topup', amount=overall_balance, currency=EnvKeys.PAY_CURRENCY)}\n"
+        f"{localize('profile.total_topup', amount=format_cents_for_ui(int(overall_balance)), currency=EnvKeys.PAY_CURRENCY)}\n"
         f"{localize('profile.purchased_count', count=items)}"
     )
     try:

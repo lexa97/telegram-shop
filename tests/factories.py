@@ -1,5 +1,5 @@
 import datetime
-from decimal import Decimal
+from bot.money import rub_to_cents
 
 from bot.database.main import Database
 from bot.database.models.main import Operations, ReferralEarnings
@@ -10,7 +10,7 @@ async def add_operation(user_id: int, value, operation_time=None) -> None:
     async with Database().session() as s:
         s.add(Operations(
             user_id=user_id,
-            operation_value=value,
+            operation_value=rub_to_cents(value),
             operation_time=operation_time or datetime.datetime.now(datetime.timezone.utc),
         ))
 
@@ -21,6 +21,6 @@ async def add_referral_earning(referrer_id: int, referral_id: int, amount, origi
         s.add(ReferralEarnings(
             referrer_id=referrer_id,
             referral_id=referral_id,
-            amount=Decimal(str(amount)),
-            original_amount=Decimal(str(original_amount)),
+            amount=rub_to_cents(amount),
+            original_amount=rub_to_cents(original_amount),
         ))

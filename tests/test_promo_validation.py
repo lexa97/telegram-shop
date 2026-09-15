@@ -12,6 +12,7 @@ from bot.database.methods.transactions import (
 from bot.database.methods.read import validate_promo_for_item
 from bot.database.methods.create import add_to_cart
 from bot.handlers.user.cart import _cart_view_data, _calc_cart_total_with_promos
+from bot.money import rub_to_cents
 
 
 def _future(hours: int = 1) -> datetime:
@@ -25,10 +26,14 @@ def _past(hours: int = 1) -> datetime:
 async def _make_promo(code, discount_type="percent", value="10", *, active=True,
                       expires_at=None, max_uses=0, current_uses=0,
                       category_id=None, item_id=None, scope=None):
+    if discount_type == "percent":
+        stored = int(value)
+    else:
+        stored = rub_to_cents(value)
     async with Database().session() as s:
         s.add(PromoCodes(
             code=code.upper(), discount_type=discount_type,
-            discount_value=Decimal(str(value)), max_uses=max_uses,
+            discount_value=stored, max_uses=max_uses,
             current_uses=current_uses, is_active=active, expires_at=expires_at,
             category_id=category_id, item_id=item_id,
             scope=scope or promo_scope_for(category_id, item_id),
@@ -229,7 +234,7 @@ class TestDanglingPromoBindings:
         ok, err, amount = await redeem_balance_promo("BALSCOPE", 820008)
 
         assert ok, err
-        assert amount == Decimal("50")
+        assert amount == rub_to_cents("50")
 
 
 # --- checkout_cart_transaction ---
@@ -285,10 +290,10 @@ class TestCartPromoValidation:
         await user_factory(telegram_id=810003, balance=1000)
         await item_factory(name="C3", price=100, values=[("v", False)])
         await add_to_cart(810003, "C3")
-        ok, msg, _ = await checkout_cart_transaction(810003, expected_total=Decimal("90"))
+        ok, msg, _ = await checkout_cart_transaction(810003, expected_total=rub_to_cents(90))
         assert (ok, msg) == (False, "price_changed")
         # Matching expected total goes through.
-        ok, msg, results = await checkout_cart_transaction(810003, expected_total=Decimal("100"))
+        ok, msg, results = await checkout_cart_transaction(810003, expected_total=rub_to_cents(100))
         assert ok, msg
         assert results[0]["price"] == 100.0
 
@@ -311,7 +316,7 @@ class TestCartDisplayMatchesCheckout:
         await item_factory(name="CD1", price=100, values=[("v", False)])
         await _make_promo("CDOK", "percent", "10")
 
-        assert await self._line_total(100, "CDOK", "CD1", 830001) == Decimal("90.00")
+        assert await self._line_total(100, "CDOK", "CD1", 830001) == rub_to_cents("90.00")
 
     async def test_no_promo_is_none(self, user_factory, item_factory):
         await user_factory(telegram_id=830002)
@@ -377,7 +382,7 @@ class TestCartDisplayMatchesCheckout:
         await _make_promo("CDT", "percent", "10", expires_at=_past())
         await add_to_cart(830009, "CD9", promo_code="CDT")
 
-        assert await _calc_cart_total_with_promos(830009) == Decimal("100.00")
+        assert await _calc_cart_total_with_promos(830009) == rub_to_cents("100.00")
 
     async def test_cart_total_applies_a_valid_promo(self, user_factory, item_factory):
         await user_factory(telegram_id=830010, balance=1000)
@@ -385,7 +390,7 @@ class TestCartDisplayMatchesCheckout:
         await _make_promo("CDT2", "percent", "10")
         await add_to_cart(830010, "CD10", promo_code="CDT2")
 
-        assert await _calc_cart_total_with_promos(830010) == Decimal("90.00")
+        assert await _calc_cart_total_with_promos(830010) == rub_to_cents("90.00")
 
     async def test_cart_total_matches_checkout_when_a_promo_spans_lines(
         self, user_factory, item_factory
@@ -399,7 +404,7 @@ class TestCartDisplayMatchesCheckout:
             await add_to_cart(830011, name, promo_code="CDSPAN")
 
         shown = await _calc_cart_total_with_promos(830011)
-        assert shown == Decimal("250.00")  # 100 + 150
+        assert shown == rub_to_cents("250.00")  # 100 + 150
 
         ok, msg, _ = await checkout_cart_transaction(830011, expected_total=shown)
         assert ok, msg
@@ -477,7 +482,7 @@ class TestRedeemBalancePromo:
         await _make_promo("RBAL", "balance", "50")
         ok, key, amount = await redeem_balance_promo("RBAL", 830001)
         assert ok, key
-        assert amount == Decimal("50")
+        assert amount == rub_to_cents("50")
 
     async def test_not_found(self, user_factory):
         await user_factory(telegram_id=830002, balance=0)

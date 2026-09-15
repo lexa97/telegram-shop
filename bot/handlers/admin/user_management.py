@@ -24,6 +24,7 @@ from bot.handlers.other import display_name, caller_name
 from bot.middleware.security import get_auth_middleware
 from bot.states import UserMgmtStates
 from bot.misc import EnvKeys, LazyPaginator, validate_telegram_id, validate_money_amount, UserDataUpdate
+from bot.money import format_cents_for_ui
 
 router = Router()
 
@@ -453,7 +454,7 @@ async def process_replenish_user_balance(message: Message, state: FSMContext):
         await message.answer(
             localize('admin.users.balance.topped',
                      name=_esc(target_name),
-                     amount=amount,
+                     amount=format_cents_for_ui(amount),
                      currency=EnvKeys.PAY_CURRENCY),
             reply_markup=back(f'check-user_{user_id}')
         )
@@ -468,7 +469,7 @@ async def process_replenish_user_balance(message: Message, state: FSMContext):
             await message.bot.send_message(
                 chat_id=user_id,
                 text=localize('admin.users.balance.topped.notify',
-                              amount=amount,
+                              amount=format_cents_for_ui(amount),
                               currency=EnvKeys.PAY_CURRENCY),
                 reply_markup=close()
             )
@@ -526,10 +527,10 @@ async def process_deduct_user_balance(message: Message, state: FSMContext):
         if not success:
             if msg == "insufficient_funds":
                 db_user = await check_user_cached(user_id)
-                current_balance = Decimal(str(db_user.get('balance') or 0)) if db_user else Decimal(0)
+                current_balance = int(db_user.get('balance') or 0) if db_user else 0
                 await message.answer(
                     localize('admin.users.balance.insufficient',
-                             balance=current_balance,
+                             balance=format_cents_for_ui(current_balance),
                              currency=EnvKeys.PAY_CURRENCY),
                     reply_markup=back(f'check-user_{user_id}')
                 )
@@ -544,7 +545,7 @@ async def process_deduct_user_balance(message: Message, state: FSMContext):
         await message.answer(
             localize('admin.users.balance.deducted',
                      name=_esc(target_name),
-                     amount=amount,
+                     amount=format_cents_for_ui(amount),
                      currency=EnvKeys.PAY_CURRENCY),
             reply_markup=back(f'check-user_{user_id}')
         )
@@ -559,7 +560,7 @@ async def process_deduct_user_balance(message: Message, state: FSMContext):
             await message.bot.send_message(
                 chat_id=user_id,
                 text=localize('admin.users.balance.deducted.notify',
-                              amount=amount,
+                              amount=format_cents_for_ui(amount),
                               currency=EnvKeys.PAY_CURRENCY),
                 reply_markup=close()
             )

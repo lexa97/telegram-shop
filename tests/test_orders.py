@@ -19,18 +19,19 @@ from bot.database.methods.orders import (
     transition_order,
     user_cancel_order,
 )
+from bot.money import rub_to_cents
 from bot.database.models.main import Categories, Goods, User
 from bot.database.models.orders import Order, OrderStatus, OrderStatusHistory
 
 
 async def _seed_user_and_goods(s, user_id: int = 500001, price: Decimal = Decimal("100.00")):
-    s.add(User(telegram_id=user_id, balance=Decimal("500.00")))
+    s.add(User(telegram_id=user_id, balance=rub_to_cents(Decimal("500.00"))))
     s.add(Categories(name=f"cat-{user_id}"))
     await s.flush()
     cat = (await s.execute(select(Categories).where(Categories.name == f"cat-{user_id}"))).scalar_one()
     goods = Goods(
         name=f"item-{user_id}",
-        price=price,
+        price=rub_to_cents(price),
         description="test",
         category_id=cat.id,
     )
@@ -94,7 +95,7 @@ async def test_snapshot_immune_to_goods_price_change():
 
     async with Database().session() as s:
         await s.execute(
-            update(Goods).where(Goods.id == goods.id).values(price=Decimal("999.99"))
+            update(Goods).where(Goods.id == goods.id).values(price=rub_to_cents(Decimal("999.99")))
         )
         await s.commit()
 

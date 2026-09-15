@@ -13,7 +13,7 @@ from bot.database.methods.read import invalidate_user_cache
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.models.main import Operations, User
 from bot.database.models.orders import DeliveryType, Order, OrderStatus, OrderStatusHistory
-from bot.database.money import rub_to_cents, cents_to_rub_decimal
+from bot.money import rub_to_cents
 
 
 class OrderError(Exception):
@@ -223,12 +223,11 @@ async def manual_refund_order(
         )
     ).scalar_one()
 
-    refund_rub = cents_to_rub_decimal(order.total_cents)
-    user.balance += refund_rub
+    user.balance += order.total_cents
     session.add(
         Operations(
             user_id=order.user_id,
-            operation_value=refund_rub,
+            operation_value=order.total_cents,
         )
     )
 

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
-from decimal import Decimal
 from uuid import uuid4
+
+from bot.money import cents_to_float_rub
 
 from sqlalchemy import select, exists, delete as sa_delete, update as sa_update
 from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
@@ -46,22 +47,12 @@ class _Abort(Exception):
         super().__init__(code)
 
 
-def _split_amount(total: Decimal, n: int) -> list[Decimal]:
-    """Split `total` into `n` amounts that sum back to it exactly.
-
-    A cart line is priced as a whole (a fixed promo comes off the line once),
-    but each delivered unit gets its own BoughtGoods row. Dividing the line by
-    n and rounding each share would drift, so the remainder cents are handed
-    out one per row: sum(result) == total, always.
-    """
+def _split_amount(total_cents: int, n: int) -> list[int]:
+    """Split line total kopecks across ``n`` unit rows; sum(result) == total_cents."""
     if n <= 0:
         return []
-    cents = int((total * 100).to_integral_value())
-    base, extra = divmod(cents, n)
-    return [
-        Decimal(base + (1 if i < extra else 0)) / 100
-        for i in range(n)
-    ]
+    base, extra = divmod(int(total_cents), n)
+    return [base + (1 if i < extra else 0) for i in range(n)]
 
 
 async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str = None) -> tuple[
@@ -116,8 +107,8 @@ async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str
                     s.add(PromoCodeUsages(promo_id=promo.id, user_id=telegram_id))
                     discount_info = {
                         "code": promo.code,
-                        "original_price": float(price),
-                        "discount": float(price - final_price),
+                        "original_price": cents_to_float_rub(price),
+                        "discount": cents_to_float_rub(price - final_price),
                     }
 
                 # 3. Checking the balance
@@ -162,8 +153,8 @@ async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str
                 result_data = {
                     "item_name": item_name,
                     "value": delivered_value,
-                    "price": float(final_price),
-                    "new_balance": float(user.balance),
+                    "price": cents_to_float_rub(final_price),
+                    "new_balance": cents_to_float_rub(user.balance),
                     "unique_id": bought_item.unique_id,
                     "bought_id": bought_item.id,
                     "bought_datetime": bought_item.bought_datetime.isoformat(),
@@ -209,7 +200,7 @@ async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str
 
 async def process_payment_with_referral(
         user_id: int,
-        amount: Decimal,
+        amount: int,
         provider: str,
         external_id: str,
         referral_percent: int = 0
@@ -263,10 +254,7 @@ async def process_payment_with_referral(
             # 4. Process the referral bonus
             clamped_percent = min(max(referral_percent, 0), 99)
             if clamped_percent > 0 and user.referral_id and user.referral_id != user_id:
-                # Quantize to 2 dp to round on write
-                referral_amount = (
-                        (Decimal(clamped_percent) / Decimal(100)) * amount
-                ).quantize(Decimal("0.01"))
+                referral_amount = (amount * clamped_percent) // 100
 
                 if referral_amount > 0:
                     referrer = (await s.execute(
@@ -320,7 +308,7 @@ async def process_payment_with_referral(
 
 
 async def checkout_cart_transaction(
-        user_id: int, expected_total: Decimal | None = None
+        user_id: int, expected_total: int | None = None
 ) -> tuple[bool, str, list | None]:
     """
     Atomic cart checkout — purchase all items from user's cart in one transaction.
@@ -432,7 +420,7 @@ async def checkout_cart_transaction(
 
                     # Sale price is the authoritative base; promo stacks on top.
                     price, _on_sale, _original_price = effective_price(goods)
-                    line_price = (price * qty).quantize(Decimal("0.01"))
+                    line_price = price * qty
 
                     # Resolve the promo for this line. A code that does not apply
                     # (expired, used up, bound to another product) is dropped from the line
@@ -488,7 +476,7 @@ async def checkout_cart_transaction(
                     # The line total is authoritative; per-unit prices are derived from it so the BoughtGoods rows sum back to what is charged.
                     p['unit_prices'] = _split_amount(p['line_price'], p['qty'])
 
-                total_price = sum((p['line_price'] for p in purchases), Decimal(0))
+                total_price = sum(p['line_price'] for p in purchases)
 
                 # Remove invalid cart items
                 if items_to_remove:
@@ -530,7 +518,7 @@ async def checkout_cart_transaction(
                             results.append({
                                 "item_name": p['goods'].name,
                                 "value": value,
-                                "price": float(unit_price),
+                                "price": cents_to_float_rub(unit_price),
                                 "bought_id": bought_item.id,
                                 "unique_id": bought_item.unique_id,
                                 "bought_datetime": bought_item.bought_datetime.isoformat(),
@@ -688,7 +676,7 @@ async def replace_item_stock_and_meta(
     return True, None, added
 
 
-async def admin_balance_change(telegram_id: int, amount: Decimal) -> tuple[bool, str]:
+async def admin_balance_change(telegram_id: int, amount: int) -> tuple[bool, str]:
     """
     Atomic admin balance change (top-up or deduction) with operation record.
     amount > 0 for top-up, amount < 0 for deduction.
@@ -734,7 +722,7 @@ async def admin_balance_change(telegram_id: int, amount: Decimal) -> tuple[bool,
     return True, "success"
 
 
-async def redeem_balance_promo(code: str, user_id: int) -> tuple[bool, str, Decimal | None]:
+async def redeem_balance_promo(code: str, user_id: int) -> tuple[bool, str, int | None]:
     """
     Redeem a balance-type promo code: add discount_value to user balance.
     Returns (success, error_key_or_empty, amount_added).
@@ -755,7 +743,7 @@ async def redeem_balance_promo(code: str, user_id: int) -> tuple[bool, str, Deci
             if err:
                 raise _Abort(_REDEEM_PROMO_ERRORS[err])
 
-            amount = Decimal(str(promo.discount_value))
+            amount = int(promo.discount_value)
             user.balance += amount
             promo.current_uses += 1
             s.add(PromoCodeUsages(promo_id=promo.id, user_id=user_id))

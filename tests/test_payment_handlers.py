@@ -13,6 +13,7 @@ from bot.handlers.user.balance_and_payment import (
 )
 from bot.misc.services.payment import currency_to_stars, payload_amount
 from bot.states import BalanceStates
+from bot.money import rub_to_cents
 
 
 class TestReplenishBalance:
@@ -80,7 +81,7 @@ class TestCheckingPayment:
 
         # Balance should be updated in DB
         user = await check_user(400011)
-        assert user['balance'] == Decimal("100")
+        assert user['balance'] == rub_to_cents("100")
 
         # Payment record should exist
         async with Database().session() as s:
@@ -107,7 +108,7 @@ class TestCheckingPayment:
         call.answer.assert_called()
         # Balance should still be 0
         user = await check_user(400012)
-        assert user['balance'] == Decimal("0")
+        assert user['balance'] == 0
 
     async def test_cryptopay_expired(self, make_callback_query, fsm_context, user_factory):
 
@@ -124,7 +125,7 @@ class TestCheckingPayment:
 
         call.answer.assert_called()
         # An expired invoice must never credit the balance.
-        assert (await check_user(400013))['balance'] == Decimal("0")
+        assert (await check_user(400013))['balance'] == 0
 
     async def test_cryptopay_already_processed(self, make_callback_query, fsm_context, user_factory):
 
@@ -157,7 +158,7 @@ class TestCheckingPayment:
 
         # Balance should only be credited once
         user = await check_user(400014)
-        assert user['balance'] == Decimal("50")
+        assert user['balance'] == rub_to_cents("50")
 
 
 class TestCryptoPayFractionalAmounts:
@@ -181,13 +182,13 @@ class TestCryptoPayFractionalAmounts:
 
         # Was truncated to 20 before: quantize(Decimal("1.")) ate the .50
         user = await check_user(400030)
-        assert user['balance'] == Decimal("20.50")
+        assert user['balance'] == rub_to_cents("20.50")
 
         async with Database().session() as s:
             payment = (await s.execute(
                 select(Payments).where(Payments.external_id == "inv_frac")
             )).scalars().first()
-            assert payment.amount == Decimal("20.50")   # ledger agrees with the credit
+            assert payment.amount == rub_to_cents("20.50")   # ledger agrees with the credit
 
     async def test_zero_amount_is_rejected(self, make_callback_query, fsm_context, user_factory):
 
@@ -205,7 +206,7 @@ class TestCryptoPayFractionalAmounts:
             await checking_payment(call, fsm_context)
 
         user = await check_user(400031)
-        assert user['balance'] == Decimal("0")
+        assert user['balance'] == 0
 
 
 class TestSuccessfulPaymentIdempotency:
@@ -242,7 +243,7 @@ class TestSuccessfulPaymentIdempotency:
             await successful_payment_handler(second)
 
         user = await check_user(400040)
-        assert user['balance'] == Decimal("100")   # not 200
+        assert user['balance'] == rub_to_cents("100")   # not 200
 
         async with Database().session() as s:
             payments = (await s.execute(
@@ -304,7 +305,7 @@ class TestBuyItemHandler:
             await buy_item_callback_handler(call, fsm_context)
 
         user = await check_user(400020)
-        assert user['balance'] == Decimal("400")
+        assert user['balance'] == rub_to_cents("400")
 
     async def test_buy_item_insufficient_funds(self, make_callback_query, fsm_context, user_factory, item_factory):
 
@@ -320,7 +321,7 @@ class TestBuyItemHandler:
 
         # Balance should be unchanged
         user = await check_user(400021)
-        assert user['balance'] == Decimal("10")
+        assert user['balance'] == rub_to_cents("10")
 
     async def test_buy_item_no_csrf_item(self, make_callback_query, fsm_context, user_factory):
 
@@ -333,7 +334,7 @@ class TestBuyItemHandler:
 
         call.answer.assert_called_once_with('middleware.security.invalid_csrf', show_alert=True)
         # A purchase without the CSRF-guarded item name must not charge anything.
-        assert (await check_user(400022))['balance'] == Decimal("500")
+        assert (await check_user(400022))['balance'] == rub_to_cents("500")
 
 
 class TestStarsAmountFromPayload:
@@ -369,7 +370,7 @@ class TestStarsAmountFromPayload:
         await successful_payment_handler(msg)
 
         user = await check_user(400100 + requested)
-        assert user['balance'] == Decimal(requested)
+        assert user['balance'] == rub_to_cents(requested)
 
     async def test_stars_payment_falls_back_when_payload_missing(
         self, make_message, user_factory
@@ -389,4 +390,4 @@ class TestStarsAmountFromPayload:
         await successful_payment_handler(msg)
 
         user = await check_user(400199)
-        assert user['balance'] == Decimal(100)
+        assert user['balance'] == rub_to_cents(100)

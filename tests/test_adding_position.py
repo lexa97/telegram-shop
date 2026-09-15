@@ -160,7 +160,8 @@ class TestFinishMultiValue:
 
         item = await get_item_info("MultiItem")
         assert item is not None
-        assert item["price"] == Decimal("100")
+        from bot.money import rub_to_cents
+        assert item["price"] == rub_to_cents("100")
         assert item["description"] == "A description"
         assert await select_item_values_amount("MultiItem") == 2
         assert await check_value("MultiItem") is False   # finite stock

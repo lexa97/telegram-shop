@@ -1,5 +1,4 @@
 from collections import Counter
-from decimal import Decimal
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
@@ -15,6 +14,7 @@ from bot.keyboards.inline import back, simple_buttons, cart_keyboard
 from bot.database.methods.pricing import apply_promo_discount
 from bot.misc import EnvKeys
 from bot.i18n import localize, esc
+from bot.money import format_cents_for_ui, rub_to_cents, cents_to_float_rub
 
 router = Router()
 
@@ -22,7 +22,7 @@ router = Router()
 RECEIPT_MAX_BUTTONS = 10
 
 
-async def _cart_view_data(user_id: int) -> tuple[list[dict], dict[str, dict], dict[int, dict], Decimal]:
+async def _cart_view_data(user_id: int) -> tuple[list[dict], dict[str, dict], dict[int, dict], int]:
     """Load everything a cart render or total needs in three queries total.
 
     Returns (items, info_map, line_data, total); line_data maps cart line id to
@@ -34,7 +34,7 @@ async def _cart_view_data(user_id: int) -> tuple[list[dict], dict[str, dict], di
     """
     items = await get_cart_items(user_id)
     if not items:
-        return [], {}, {}, Decimal(0)
+        return [], {}, {}, 0
 
     from bot.database.methods.read import get_items_info
     from bot.database.methods import effective_price
@@ -59,7 +59,7 @@ async def _cart_view_data(user_id: int) -> tuple[list[dict], dict[str, dict], di
             promo_lines.setdefault(promo['id'], []).append(item['id'])
 
         line_data[item['id']] = {
-            'line_total': (base_price * qty).quantize(Decimal("0.01")),
+            'line_total': base_price * qty,
             'discounted': None,
             'eligible': promo is not None,
             'on_sale': on_sale,
@@ -77,7 +77,7 @@ async def _cart_view_data(user_id: int) -> tuple[list[dict], dict[str, dict], di
         )
         ld['line_total'] = ld['discounted']
 
-    total = sum((ld['line_total'] for ld in line_data.values()), Decimal(0))
+    total = sum(ld['line_total'] for ld in line_data.values())
     return items, info_map, line_data, total
 
 
@@ -113,35 +113,35 @@ async def _show_cart(call: CallbackQuery):
         if ld['discounted'] is not None:
             lines.append(localize(
                 "cart.item_promo", name=name, qty=qty,
-                original=(original * qty).quantize(Decimal("0.01")), price=line_total,
+                original=format_cents_for_ui(original * qty), price=format_cents_for_ui(line_total),
                 currency=EnvKeys.PAY_CURRENCY, code=code,
             ))
         elif ld['eligible']:
             # Valid code, but its single redemption went to another line.
             lines.append(localize(
                 "cart.item_promo_elsewhere", name=name, qty=qty,
-                price=line_total, currency=EnvKeys.PAY_CURRENCY,
+                price=format_cents_for_ui(line_total), currency=EnvKeys.PAY_CURRENCY,
                 code=code,
             ))
         elif item.get('promo_code'):
             lines.append(localize(
                 "cart.item_promo_invalid", name=name, qty=qty,
-                price=line_total, currency=EnvKeys.PAY_CURRENCY,
+                price=format_cents_for_ui(line_total), currency=EnvKeys.PAY_CURRENCY,
                 code=code,
             ))
         elif ld['on_sale']:
             lines.append(localize(
                 "cart.item_sale", name=name, qty=qty,
-                original=(original * qty).quantize(Decimal("0.01")), price=line_total,
+                original=format_cents_for_ui(original * qty), price=format_cents_for_ui(line_total),
                 currency=EnvKeys.PAY_CURRENCY,
             ))
         else:
             lines.append(localize(
                 "cart.item", name=name, qty=qty,
-                price=line_total, currency=EnvKeys.PAY_CURRENCY,
+                price=format_cents_for_ui(line_total), currency=EnvKeys.PAY_CURRENCY,
             ))
 
-    lines.append(localize("cart.total", total=real_total, currency=EnvKeys.PAY_CURRENCY))
+    lines.append(localize("cart.total", total=format_cents_for_ui(real_total), currency=EnvKeys.PAY_CURRENCY))
 
     try:
         await call.message.edit_text(
@@ -285,15 +285,13 @@ def _slim_receipt(results: list[dict]) -> list[dict]:
     ]
 
 
-def _receipt_total(results: list[dict]) -> Decimal:
-    """Sum a checkout's per-unit prices back into the line total.
-    """
-    return sum(
-        (Decimal(str(r['price'])) for r in results), Decimal(0)
-    ).quantize(Decimal("0.01"))
+def _receipt_total(results: list[dict]) -> str:
+    """Sum a checkout's per-unit prices (float rub in results) for display."""
+    total_cents = sum(rub_to_cents(r['price']) for r in results)
+    return format_cents_for_ui(total_cents)
 
 
-async def _calc_cart_total_with_promos(user_id: int) -> Decimal:
+async def _calc_cart_total_with_promos(user_id: int) -> int:
     """Calculate real cart total considering sales and promo codes on each item."""
     _items, _info, _lines, total = await _cart_view_data(user_id)
     return total
@@ -313,7 +311,7 @@ async def cart_checkout_handler(call: CallbackQuery, state: FSMContext):
         (localize("btn.no"), "cart"),
     ]
     await call.message.edit_text(
-        localize("cart.checkout_confirm", count=count, total=total, currency=EnvKeys.PAY_CURRENCY),
+        localize("cart.checkout_confirm", count=count, total=format_cents_for_ui(total), currency=EnvKeys.PAY_CURRENCY),
         reply_markup=simple_buttons(buttons),
     )
 
@@ -325,7 +323,7 @@ async def cart_checkout_confirm_handler(call: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     expected_raw = data.get("cart_expected_total")
-    expected_total = Decimal(expected_raw) if expected_raw is not None else None
+    expected_total = int(expected_raw) if expected_raw is not None else None
 
     success, msg, results = await checkout_cart_transaction(user_id, expected_total=expected_total)
 

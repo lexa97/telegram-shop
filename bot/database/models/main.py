@@ -97,7 +97,7 @@ class User(Database.BASE):
     telegram_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     role_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey('roles.id', ondelete="RESTRICT"), default=1, index=True)
-    balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    balance: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     referral_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete="SET NULL"), nullable=True, index=True)
     registration_date: Mapped[datetime.datetime] = mapped_column(
@@ -110,6 +110,7 @@ class User(Database.BASE):
 
     __table_args__ = (
         CheckConstraint('referral_id != telegram_id', name='ck_users_no_self_referral'),
+        CheckConstraint('balance >= 0', name='ck_users_balance_nonneg'),
         Index('ix_users_registration_date', 'registration_date'),
     )
 
@@ -145,7 +146,7 @@ class Goods(Database.BASE):
     __tablename__ = 'goods'
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    price: Mapped[int] = mapped_column(BigInteger, nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('categories.id', ondelete="CASCADE"), nullable=False, index=True)
@@ -182,7 +183,7 @@ class BoughtGoods(Database.BASE):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     item_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
-    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    price: Mapped[int] = mapped_column(BigInteger, nullable=False)
     buyer_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete="SET NULL"), nullable=True, index=True)
     bought_datetime: Mapped[datetime.datetime] = mapped_column(
@@ -209,7 +210,7 @@ class Operations(Database.BASE):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete="SET NULL"), nullable=True, index=True)
-    operation_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    operation_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
     operation_time: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
     user_telegram_id: Mapped[Optional["User"]] = relationship(
@@ -230,7 +231,7 @@ class Payments(Database.BASE):
     external_id: Mapped[str] = mapped_column(String(128), nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete="SET NULL"), nullable=True, index=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     currency: Mapped[str] = mapped_column(String(8), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
     created_at: Mapped[datetime.datetime] = mapped_column(
@@ -255,8 +256,8 @@ class ReferralEarnings(Database.BASE):
         BigInteger, ForeignKey('users.telegram_id', ondelete="CASCADE"), nullable=False, index=True)
     referral_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete="CASCADE"), nullable=False, index=True)
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    original_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    original_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -315,7 +316,7 @@ class PromoCodes(Database.BASE):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     discount_type: Mapped[str] = mapped_column(String(10), nullable=False)  # 'percent' | 'fixed' | 'balance'
-    discount_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    discount_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default='global')
     max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 = unlimited
     current_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

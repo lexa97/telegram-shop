@@ -8,6 +8,7 @@ from bot.database.methods.read import (
 )
 from bot.database.methods.transactions import replace_item_stock_and_meta
 from bot.database.methods.update import update_item
+from bot.money import rub_to_cents
 from bot.handlers.admin.categories_management import (
     process_category_for_add, process_category_for_delete,
     check_category_for_update, check_category_name_for_update,
@@ -117,7 +118,7 @@ class TestReplenishBalance:
 
         msg.answer.assert_called_once()
         user = await check_user(800020)
-        assert user['balance'] == Decimal("600")
+        assert user['balance'] == rub_to_cents("600")
 
     async def test_deduct_user_balance(self, make_message, fsm_context, user_factory):
 
@@ -130,7 +131,7 @@ class TestReplenishBalance:
 
         msg.answer.assert_called_once()
         user = await check_user(800021)
-        assert user['balance'] == Decimal("300")
+        assert user['balance'] == rub_to_cents("300")
 
     async def test_deduct_insufficient_balance(self, make_message, fsm_context, user_factory):
 
@@ -144,7 +145,7 @@ class TestReplenishBalance:
         msg.answer.assert_called_once()
         # Balance should not change
         user = await check_user(800022)
-        assert user['balance'] == Decimal("50")
+        assert user['balance'] == rub_to_cents("50")
 
 
 class TestBlockUser:
@@ -205,7 +206,7 @@ class TestReplenishBalanceEdgeCases:
         msg.answer.assert_called_once()
         # Balance should not change
         user = await check_user(800040)
-        assert user['balance'] == Decimal("100")
+        assert user['balance'] == rub_to_cents("100")
 
     async def test_replenish_negative_amount(self, make_message, fsm_context, user_factory):
 
@@ -218,7 +219,7 @@ class TestReplenishBalanceEdgeCases:
 
         msg.answer.assert_called_once()
         user = await check_user(800041)
-        assert user['balance'] == Decimal("100")
+        assert user['balance'] == rub_to_cents("100")
 
     async def test_replenish_zero_amount(self, make_message, fsm_context, user_factory):
 
@@ -435,7 +436,7 @@ class TestStatsAggregates:
         assert stats["total_users"] == 2
         assert stats["total_goods"] == 2
         assert stats["total_items"] == 2  # stock rows, not positions
-        assert stats["total_revenue"] == Decimal(0)
+        assert stats["total_revenue"] == 0
 
     async def test_global_revenue_sums_purchases(
         self, fake_cache, user_factory, item_factory
@@ -453,7 +454,7 @@ class TestStatsAggregates:
 
         stats = await (await self._stats_cache(fake_cache)).get_global_stats()
 
-        assert stats["total_revenue"] == Decimal("300.00")
+        assert stats["total_revenue"] == rub_to_cents("300")
         # Both stock rows were consumed.
         assert stats["total_items"] == 0
 
@@ -470,9 +471,9 @@ class TestStatsAggregates:
         yesterday = today - _dt.timedelta(days=1)
 
         async with Database().session() as s:
-            s.add(Operations(user_id=930004, operation_value=Decimal("70.00"),
+            s.add(Operations(user_id=930004, operation_value=rub_to_cents("70.00"),
                              operation_time=today))
-            s.add(Operations(user_id=930004, operation_value=Decimal("500.00"),
+            s.add(Operations(user_id=930004, operation_value=rub_to_cents("500.00"),
                              operation_time=yesterday))
 
         stats = await (await self._stats_cache(fake_cache)).get_daily_stats(
@@ -480,17 +481,17 @@ class TestStatsAggregates:
         )
 
         # Yesterday's 500 must not leak into today's figure.
-        assert stats["operations"] == Decimal("70.00")
+        assert stats["operations"] == rub_to_cents("70.00")
         assert stats["users"] == 1
-        assert stats["orders"] == Decimal(0)
+        assert stats["orders"] == 0
 
     async def test_daily_stats_are_zero_on_an_empty_day(self, fake_cache):
         stats = await (await self._stats_cache(fake_cache)).get_daily_stats("2020-01-01")
 
         assert stats == {
             "users": 0,
-            "orders": Decimal(0),
-            "operations": Decimal(0),
+            "orders": 0,
+            "operations": 0,
             "orders_count": 0,
         }
 
