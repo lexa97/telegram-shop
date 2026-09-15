@@ -109,6 +109,7 @@ def setup_test_database():
     db = Database()
 
     async def _setup():
+        import bot.database.models  # noqa: F401 — register Order tables on metadata
         async with db.engine.begin() as conn:
             await conn.run_sync(Database.BASE.metadata.create_all)
         from bot.database.models.main import Role
@@ -137,6 +138,7 @@ async def db_cleanup(setup_test_database):
         Reviews, CartItems, PromoCodeUsages, PromoCodes,
         StockSubscriptions,
     )
+    from bot.database.models.orders import OrderStatusHistory, Order
 
     db = Database()
     async with db.session() as s:
@@ -147,7 +149,9 @@ async def db_cleanup(setup_test_database):
         await s.execute(delete(PromoCodeUsages))
         await s.execute(delete(PromoCodes))
         await s.execute(delete(ReferralEarnings))
+        await s.execute(delete(OrderStatusHistory))
         await s.execute(delete(BoughtGoods))
+        await s.execute(delete(Order))
         await s.execute(delete(Operations))
         await s.execute(delete(Payments))
         await s.execute(delete(ItemValues))
