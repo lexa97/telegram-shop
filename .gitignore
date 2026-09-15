@@ -143,3 +143,8 @@ cython_debug/
 .ruff_cache
 
 data
+
+# Graphify (кэш пересобирается локально; graph.json/report коммитим)
+graphify-out/cache/
+graphify-out/cost.json
+graphify-out/.graphify_python
