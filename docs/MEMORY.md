@@ -18,7 +18,7 @@
 ## 2026-09-15 — Декомпозиция ТЗ Telegram-магазина цифровых товаров
 
 **Ветка:** `cursor/tz-subagent-docs-fdff` → `main`  
-**PR:** (проставится после открытия)
+**PR:** https://github.com/lexa97/telegram-shop/pull/2
 
 ### Сделали
 
