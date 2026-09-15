@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy import select
 
 from bot.database.main import Database
+from bot.money import rub_to_cents
 from bot.database.models.main import Goods, PromoCodes
 from bot.database.methods.pricing import effective_price
 from bot.database.methods.transactions import buy_item_transaction
@@ -57,11 +58,11 @@ class TestEffectivePrice:
     ])
     def test_pricing(self, price, percent, until, expected_final, expected_on_sale):
         final, on_sale, original = effective_price(
-            {"price": Decimal(price), "sale_percent": percent, "sale_until": until}
+            {"price": rub_to_cents(price), "sale_percent": percent, "sale_until": until}
         )
-        assert final == Decimal(expected_final)
+        assert final == rub_to_cents(expected_final)
         assert on_sale is expected_on_sale
-        assert original == Decimal(price)
+        assert original == rub_to_cents(price)
 
 
 # --- Purchase flow integration tests ---
@@ -91,7 +92,7 @@ class TestSalePurchase:
         await user_factory(telegram_id=500003, balance=1000)
         await item_factory(name="StackItem", price=100, values=[("code-3", False)])
         await _set_sale("StackItem", Decimal("20"), _future())  # -> 80
-        await _create_promo("SAVE10", "percent", Decimal("10"))  # 10% off the 80
+        await _create_promo("SAVE10", "percent", 10)  # 10% off the 80
 
         success, msg, data = await buy_item_transaction(500003, "StackItem", promo_code="SAVE10")
         assert success is True, msg
@@ -112,7 +113,7 @@ class TestSetItemSale:
         info = await get_item_info("M1")
         final, on_sale, _ = effective_price(info)
         assert on_sale is True
-        assert final == Decimal("75.00")
+        assert final == rub_to_cents("75.00")
 
     async def test_clears_sale(self, item_factory):
         await item_factory(name="M2", price=100, values=[("v", False)])
@@ -143,7 +144,7 @@ class TestSaleAdminFlow:
         info = await get_item_info("FsmSale")
         final, on_sale, _ = effective_price(info)
         assert on_sale is True
-        assert final == Decimal("75.00")
+        assert final == rub_to_cents("75.00")
 
     async def test_fsm_zero_percent_disables(self, item_factory, make_message, fsm_context):
         await item_factory(name="FsmOff", price=100, values=[("v", False)])

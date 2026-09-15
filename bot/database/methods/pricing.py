@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from bot.money import rub_to_cents
+
 
 def _get(goods: Any, key: str):
     """Read a field from either an ORM object or a plain dict."""
@@ -30,36 +32,35 @@ def coerce_sale_until(value: Any) -> datetime | None:
 
 
 def apply_promo_discount(
-        base_price: Decimal, discount_type: str, discount_value: Any, quantity: int = 1
-) -> Decimal:
-    """Return the discounted line total for ``quantity`` units, clamped to >= 0.
+        base_price_cents: int, discount_type: str, discount_value: Any, quantity: int = 1
+) -> int:
+    """Return the discounted line total in kopecks for ``quantity`` units, clamped to >= 0.
 
-    - ``percent``: a percentage off each unit; the percent is clamped to [0, 100]
-      so a mis-entered value (e.g. 150 from the web admin) can never produce a
-      negative price that would *mint* balance on purchase.
-    - ``fixed``: a flat amount off the whole line once (not per unit); clamped so
-      it can neither go negative nor add to the price.
+    - ``percent``: percentage off each unit; percent clamped to [0, 100].
+    - ``fixed``: flat kopecks off the whole line once (not per unit).
 
     Balance-type promos credit the balance directly and never reach here.
     """
-    base = Decimal(str(base_price))
+    base = int(base_price_cents)
+    qty = max(int(quantity), 0)
+    line = base * qty
     if discount_type == 'percent':
-        pct = min(max(Decimal(str(discount_value)), Decimal(0)), Decimal(100))
-        line = base * (1 - pct / 100) * quantity
+        pct = min(max(int(discount_value), 0), 100)
+        line = (line * (100 - pct)) // 100
     else:  # 'fixed'
-        amount = max(Decimal(str(discount_value)), Decimal(0))
-        line = base * quantity - amount
-    return max(line, Decimal(0)).quantize(Decimal("0.01"))
+        off = max(int(discount_value), 0)
+        line = max(line - off, 0)
+    return line
 
 
-def effective_price(goods: Any, now: datetime | None = None) -> tuple[Decimal, bool, Decimal]:
-    """Return (final_price, on_sale, original_price) for a product.
+def effective_price(goods: Any, now: datetime | None = None) -> tuple[int, bool, int]:
+    """Return (final_price_cents, on_sale, original_price_cents) for a product.
 
     'goods' may be an ORM 'Goods' instance or a dict with 'price',
     'sale_percent' and 'sale_until' keys. The sale applies only while
-    'sale_until' is in the future and 'sale_percent' is a positive percent
+    'sale_until' is in the future and 'sale_percent' is a positive percent.
     """
-    original = Decimal(str(_get(goods, 'price'))).quantize(Decimal("0.01"))
+    original = int(_get(goods, 'price'))
 
     sale_percent = _get(goods, 'sale_percent')
     sale_until = coerce_sale_until(_get(goods, 'sale_until'))
@@ -74,7 +75,14 @@ def effective_price(goods: Any, now: datetime | None = None) -> tuple[Decimal, b
         return original, False, original
 
     pct = min(pct, Decimal(100))
-    final = (original * (1 - pct / 100)).quantize(Decimal("0.01"))
+    # Integer math on kopecks: final = original * (100 - pct) / 100
+    pct_bp = int((pct * 100).to_integral_value())  # percent in basis points of a percent (20% -> 2000)
+    final = (original * (10000 - pct_bp)) // 10000
     if final < 0:
-        final = Decimal("0.00")
+        final = 0
     return final, True, original
+
+
+def price_cents_from_rub_input(amount: Any) -> int:
+    """Parse admin/user ruble input into kopecks."""
+    return rub_to_cents(amount)

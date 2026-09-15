@@ -4,6 +4,7 @@ from pydantic import ValidationError
 
 from bot.misc.validators import validate_telegram_id, validate_money_amount, sanitize_html, PaymentRequest, \
     ItemPurchaseRequest, CategoryRequest, BroadcastMessage
+from bot.money import rub_to_cents
 
 
 class TestValidateTelegramId:
@@ -31,10 +32,10 @@ class TestValidateTelegramId:
 class TestValidateMoneyAmount:
 
     @pytest.mark.parametrize("raw,kwargs,expected", [
-        ("50", {}, Decimal("50.00")),
-        ("99.99", {}, Decimal("99.99")),
-        ("0.01", {"min_amount": Decimal("0.01")}, Decimal("0.01")),          # exact min
-        ("1000000", {"max_amount": Decimal("1000000")}, Decimal("1000000.00")),  # exact max
+        ("50", {}, rub_to_cents("50")),
+        ("99.99", {}, rub_to_cents("99.99")),
+        ("0.01", {"min_amount": Decimal("0.01")}, rub_to_cents("0.01")),          # exact min
+        ("1000000", {"max_amount": Decimal("1000000")}, rub_to_cents("1000000")),  # exact max
     ])
     def test_accepted(self, raw, kwargs, expected):
         assert validate_money_amount(raw, **kwargs) == expected

@@ -9,6 +9,7 @@ from bot.database.methods.create import add_values_bulk, normalize_values
 from bot.database.methods.transactions import replace_item_stock_and_meta
 from bot.handlers.other import _parse_channel_username, is_safe_item_name, caller_name
 from bot.handlers.admin._common import _notify_restock_safe, parse_price
+from bot.money import rub_to_cents
 
 from bot.keyboards.inline import back, question_buttons, simple_buttons
 from bot.database.methods.audit import log_audit
@@ -300,7 +301,7 @@ async def update_item_infinity(message: Message, state):
         old_name=item_old_name,
         new_name=item_new_name,
         description=data.get('item_description'),
-        price=data.get('item_price'),
+        price=rub_to_cents(data.get('item_price')),
         category_name=data.get('item_category'),
         values=[value],
         is_infinity=True,
@@ -360,7 +361,7 @@ async def update_item_no_infinity(call: CallbackQuery, state):
         old_name=item_old_name,
         new_name=item_new_name,
         description=data.get('item_description'),
-        price=data.get('item_price'),
+        price=rub_to_cents(data.get('item_price')),
         category_name=data.get('item_category'),
         values=raw_values,
         is_infinity=False,

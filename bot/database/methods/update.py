@@ -8,6 +8,7 @@ from bot.database.models import User, Goods, Categories, BoughtGoods, Role
 from bot.database.models.main import PromoCodes, CartItems
 from bot.database import Database
 from bot.logger_mesh import logger
+from bot.money import rub_to_cents
 
 
 async def set_role(telegram_id: int, role: int) -> None:
@@ -23,9 +24,12 @@ async def set_role(telegram_id: int, role: int) -> None:
 async def update_item(item_name: str, new_name: str, description: str, price, category: str) -> tuple[bool, str | None]:
     """Update a Goods record with proper locking.
 
+    ``price`` is in whole rubles from admin input; stored as kopecks.
+
     Returns ``(success, error_code)``. The error code is a stable key
     ("position_invalid", "position_exists", "db_error")
     """
+    price_cents = rub_to_cents(price)
     # Names whose cache entries the commit invalidates. Collected inside the transaction, acted on only once it has succeeded.
     to_invalidate: list[str] = []
     old_category: str | None = None
@@ -53,7 +57,7 @@ async def update_item(item_name: str, new_name: str, description: str, price, ca
 
             if new_name == item_name:
                 goods.description = description
-                goods.price = price
+                goods.price = price_cents
                 goods.category_id = cat_id
                 to_invalidate = [item_name]
             else:
@@ -65,7 +69,7 @@ async def update_item(item_name: str, new_name: str, description: str, price, ca
 
                 goods.name = new_name
                 goods.description = description
-                goods.price = price
+                goods.price = price_cents
                 goods.category_id = cat_id
 
                 await s.execute(

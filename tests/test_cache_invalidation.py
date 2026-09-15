@@ -7,6 +7,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from bot.database.main import Database
+from bot.money import rub_to_cents
 from bot.database.methods.read import (
     invalidate_user_cache, invalidate_item_cache, invalidate_category_cache,
     invalidate_stats_cache, check_value_cached, async_cached, is_subscribed_to_stock,
@@ -277,7 +278,8 @@ class TestCacheInvalidationAfterMutations:
         user_id = user["telegram_id"]
         fake_cache.store[f"user:{user_id}"] = {"telegram_id": user_id, "balance": 0}
 
-        ok, msg = await admin_balance_change(user_id, Decimal("500"))
+        from bot.money import rub_to_cents
+        ok, msg = await admin_balance_change(user_id, rub_to_cents("500"))
         assert ok, msg
         await asyncio.sleep(0)
 
@@ -347,7 +349,7 @@ class TestCacheInvalidationAfterMutations:
 
         success, msg = await process_payment_with_referral(
             user_id=user_id,
-            amount=Decimal("500"),
+            amount=rub_to_cents("500"),
             provider="stars",
             external_id="pay_001",
             referral_percent=0,
@@ -373,7 +375,7 @@ class TestCacheInvalidationAfterMutations:
 
         success, msg = await process_payment_with_referral(
             user_id=user_id,
-            amount=Decimal("1000"),
+            amount=rub_to_cents("1000"),
             provider="stars",
             external_id="pay_002",
             referral_percent=10,

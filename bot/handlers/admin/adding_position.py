@@ -159,7 +159,8 @@ async def finish_adding_items_callback_handler(call: CallbackQuery, state):
     raw_values: list[str] = data.get("item_values", []) or []
 
     # Create position
-    await create_item(item_name, item_description, item_price, category_name)
+    from bot.money import rub_to_cents
+    await create_item(item_name, item_description, rub_to_cents(item_price), category_name)
 
     added, skipped_db_dup, skipped_batch_dup, skipped_invalid = await add_values_bulk(
         item_name, raw_values, is_infinity=False
@@ -226,7 +227,8 @@ async def finish_adding_item_callback_handler(message: Message, state):
         return
 
     # 1) Create position
-    await create_item(item_name, item_description, item_price, category_name)
+    from bot.money import rub_to_cents
+    await create_item(item_name, item_description, rub_to_cents(item_price), category_name)
     # 2) Add 1 “infinite” value
     added = await add_values_to_item(item_name, single_value, True)
 

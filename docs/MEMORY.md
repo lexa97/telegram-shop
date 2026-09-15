@@ -15,6 +15,39 @@
 
 ---
 
+## 2026-09-15 — PR: ТЗ-01 деньги в копейках (BIGINT)
+
+**Ветка:** `cursor/money-kopecks-eee5` → `main`  
+**PR:** (создаётся)
+
+### Сделали
+
+- Модуль `bot/money.py`: `rub_to_cents`, `cents_to_display`, форматирование для UI и CSV.
+- Alembic `a9b0c1d2e3f4`: денежные колонки → `BIGINT` копеек, промо `fixed`/`balance` ×100, `CHECK balance >= 0`.
+- Модели, pricing, transactions, платежи, админка, корзина, экспорт CSV — единый контракт копеек в БД, рубли в UI.
+- Тесты и factories переведены; добавлен `tests/test_money.py`.
+
+### Обсуждали
+
+- Фабрики тестов принимают суммы в **рулях** и конвертируют в копейки — меньше шума в тестах.
+- `sale_percent` остаётся `Numeric` (процент, не деньги).
+
+### Отвергли
+
+- *ORM-тип `Money`* — *причина:* по ТЗ достаточно `BigInteger` + хелперы.
+- *Двойная конвертация в `update_item` из handler и из метода* — конвертация на границе `update_item` / `create_item`.
+
+### Проверка
+
+- `python3 -m pytest -q` (966+ тестов).
+- Миграция: `alembic upgrade head` на Postgres после деплоя.
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-15 — Декомпозиция ТЗ Telegram-магазина цифровых товаров
 
 **Ветка:** `cursor/tz-subagent-docs-fdff` → `main`  

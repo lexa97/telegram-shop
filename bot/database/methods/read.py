@@ -329,12 +329,13 @@ async def select_unique_buyers() -> int:
         )).scalar() or 0
 
 
-async def select_avg_order() -> Decimal:
-    """Return average purchase price."""
+async def select_avg_order() -> int:
+    """Return average purchase price in kopecks."""
     async with Database().session() as s:
-        return (await s.execute(
+        avg = (await s.execute(
             select(func.avg(BoughtGoods.price))
-        )).scalar() or Decimal(0)
+        )).scalar()
+        return int(avg or 0)
 
 
 async def select_today_orders_count(date: str) -> int:
@@ -366,8 +367,8 @@ async def get_blocked_user_ids() -> list[int]:
         return [row[0] for row in result.all()]
 
 
-async def select_today_orders(date: str) -> Decimal:
-    """Return total revenue for given date (YYYY-MM-DD)."""
+async def select_today_orders(date: str) -> int:
+    """Return total revenue for given date (YYYY-MM-DD), in kopecks."""
     start_of_day, end_of_day = _day_window(date)
     async with Database().session() as s:
         res = (await s.execute(
@@ -376,17 +377,18 @@ async def select_today_orders(date: str) -> Decimal:
                 BoughtGoods.bought_datetime < end_of_day
             )
         )).scalar()
-        return res or Decimal(0)
+        return int(res or 0)
 
 
-async def select_all_orders() -> Decimal:
-    """Return total revenue for all time (sum of BoughtGoods.price)."""
+async def select_all_orders() -> int:
+    """Return total revenue for all time (sum of BoughtGoods.price), in kopecks."""
     async with Database().session() as s:
-        return (await s.execute(select(func.sum(BoughtGoods.price)))).scalar() or Decimal(0)
+        res = (await s.execute(select(func.sum(BoughtGoods.price)))).scalar()
+        return int(res or 0)
 
 
-async def select_today_operations(date: str) -> Decimal:
-    """Return total operations value for given date (YYYY-MM-DD)."""
+async def select_today_operations(date: str) -> int:
+    """Return total operations value for given date (YYYY-MM-DD), in kopecks."""
     start_of_day, end_of_day = _day_window(date)
     async with Database().session() as s:
         res = (await s.execute(
@@ -395,30 +397,33 @@ async def select_today_operations(date: str) -> Decimal:
                 Operations.operation_time < end_of_day
             )
         )).scalar()
-        return res or Decimal(0)
+        return int(res or 0)
 
 
-async def select_all_operations() -> Decimal:
-    """Return total operations value for all time."""
+async def select_all_operations() -> int:
+    """Return total operations value for all time, in kopecks."""
     async with Database().session() as s:
-        return (await s.execute(select(func.sum(Operations.operation_value)))).scalar() or Decimal(0)
+        res = (await s.execute(select(func.sum(Operations.operation_value)))).scalar()
+        return int(res or 0)
 
 
-async def select_users_balance() -> Decimal:
-    """Return sum of all users' balances (0 when there are none)."""
+async def select_users_balance() -> int:
+    """Return sum of all users' balances (0 when there are none), in kopecks."""
     async with Database().session() as s:
-        return (await s.execute(
+        res = (await s.execute(
             select(func.coalesce(func.sum(User.balance), 0))
-        )).scalar() or Decimal(0)
+        )).scalar()
+        return int(res or 0)
 
 
-async def select_user_operations_total(user_id: int | str) -> Decimal:
-    """Total of a user's operations, summed server-side (avoids pulling every row)."""
+async def select_user_operations_total(user_id: int | str) -> int:
+    """Total of a user's operations in kopecks, summed server-side."""
     async with Database().session() as s:
-        return (await s.execute(
+        res = (await s.execute(
             select(func.coalesce(func.sum(Operations.operation_value), 0))
             .where(Operations.user_id == user_id)
-        )).scalar() or Decimal(0)
+        )).scalar()
+        return int(res or 0)
 
 
 async def check_user_referrals(user_id: int) -> int:
@@ -479,15 +484,15 @@ async def get_user_profile_aggregates(user_id: int, role_id: int | None) -> dict
         )).one()
 
     return {
-        "operations_total": row.operations_total or Decimal(0),
+        "operations_total": int(row.operations_total or 0),
         "items_count": row.items_count or 0,
         "referrals": row.referrals or 0,
         "role_name": row.role_name,
         "blocked": bool(row.is_blocked),
         "earnings": {
             "total_earnings_count": row.earnings_count or 0,
-            "total_amount": row.earnings_amount or Decimal(0),
-            "total_original_amount": row.earnings_original or Decimal(0),
+            "total_amount": int(row.earnings_amount or 0),
+            "total_original_amount": int(row.earnings_original or 0),
             "active_referrals_count": row.active_referrals or 0,
         },
     }
@@ -508,8 +513,8 @@ async def get_referral_earnings_stats(referrer_id: int) -> Dict:
 
         return {
             'total_earnings_count': stats.total_earnings_count or 0,
-            'total_amount': stats.total_amount or Decimal(0),
-            'total_original_amount': stats.total_original_amount or Decimal(0),
+            'total_amount': int(stats.total_amount or 0),
+            'total_original_amount': int(stats.total_original_amount or 0),
             'active_referrals_count': stats.active_referrals_count or 0
         }
 

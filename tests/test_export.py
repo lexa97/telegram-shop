@@ -144,7 +144,7 @@ class TestStreamCsv:
         async with Database().session() as s:
             s.add(BoughtGoods(
                 item_name="=HYPERLINK(\"http://evil\",\"click\")", value="v",
-                price=10, bought_datetime=NOW, unique_id=770020, buyer_id=770020,
+                price=1000, bought_datetime=NOW, unique_id=770020, buyer_id=770020,
             ))
 
         response = await export_purchases(_request(session={"authenticated": True}))

@@ -1,5 +1,4 @@
 import asyncio
-from decimal import Decimal
 from typing import Any, Dict
 
 from sqlalchemy import func, select
@@ -8,10 +7,10 @@ from bot.logger_mesh import logger
 from bot.misc.caching import CacheManager, cache_result
 
 
-def _restore_decimals(data: Dict[str, Any], fields: tuple[str, ...]) -> Dict[str, Any]:
-    """Re-hydrate money fields a Redis round-trip turned into strings"""
+def _restore_ints(data: Dict[str, Any], fields: tuple[str, ...]) -> Dict[str, Any]:
+    """Re-hydrate integer money fields a Redis round-trip turned into strings."""
     return {
-        key: (Decimal(str(value)) if key in fields else value)
+        key: (int(value) if key in fields else value)
         for key, value in data.items()
     }
 
@@ -62,14 +61,14 @@ class StatsCache:
 
         return {
             "users": row.users or 0,
-            "orders": Decimal(str(row.orders or 0)),
-            "operations": Decimal(str(row.operations or 0)),
+            "orders": int(row.orders or 0),
+            "operations": int(row.operations or 0),
             "orders_count": row.orders_count or 0,
         }
 
     async def get_daily_stats(self, date: str) -> Dict[str, Any]:
         """Cached daily statistics."""
-        return _restore_decimals(await self._daily_stats(date), ("orders", "operations"))
+        return _restore_ints(await self._daily_stats(date), ("orders", "operations"))
 
     # --- global (all-time; TTL only, never dropped on the write path) ---
 
@@ -97,14 +96,14 @@ class StatsCache:
 
         return {
             "total_users": row.total_users or 0,
-            "total_revenue": Decimal(str(row.total_revenue or 0)),
+            "total_revenue": int(row.total_revenue or 0),
             "total_items": row.total_items or 0,
             "total_goods": row.total_goods or 0,
         }
 
     async def get_global_stats(self) -> Dict[str, Any]:
         """Cached global statistics."""
-        return _restore_decimals(await self._global_stats(), ("total_revenue",))
+        return _restore_ints(await self._global_stats(), ("total_revenue",))
 
     # --- dashboard (the rest of the admin statistics screen) ---
 
@@ -142,17 +141,17 @@ class StatsCache:
 
         return {
             "unique_buyers": row.unique_buyers or 0,
-            "avg_order": Decimal(str(row.avg_order or 0)),
+            "avg_order": int(row.avg_order or 0),
             "sold_count": row.sold_count or 0,
             "blocked_users": row.blocked_users or 0,
-            "users_balance": Decimal(str(row.users_balance or 0)),
-            "all_operations": Decimal(str(row.all_operations or 0)),
+            "users_balance": int(row.users_balance or 0),
+            "all_operations": int(row.all_operations or 0),
             "categories": row.categories or 0,
         }
 
     async def get_dashboard_stats(self) -> Dict[str, Any]:
         """The rest of the admin statistics screen, in one query"""
-        return _restore_decimals(
+        return _restore_ints(
             await self._dashboard_stats(),
             ("avg_order", "users_balance", "all_operations"),
         )
