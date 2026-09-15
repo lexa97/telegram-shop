@@ -5,7 +5,9 @@ alwaysApply: true
 
 # Память проекта
 
-- Перед крупными изменениями просматривайте `docs/MEMORY.md` (контекст, решения, открытые вопросы).
-- После завершения задачи, важного обсуждения или неочевидного вывода добавляйте короткую запись в `docs/MEMORY.md` (дата, что решили, что сделали, как проверить).
-- Структура кода — через **Graphify** (см. `.cursor/rules/graphify.mdc`, `devtools/graphify/README.md`). После правок в коде: `graphify update .`.
-- Основной стек и запуск бота — в `README.md`; в MEMORY только наши отличия и доработки.
+- Следуйте skill **pr-memory-graphify** (`.cursor/skills/pr-memory-graphify/SKILL.md` или `/pr-memory-graphify`):
+  - **PR готов** → обновить `docs/MEMORY.md` (сделали, обсуждали, **отвергли**), коммит в ветку PR.
+  - **PR смержен в main** → `./devtools/graphify/refresh-after-merge.sh`, коммит `graphify-out/`, пометка в MEMORY.
+- Перед крупными изменениями читайте `docs/MEMORY.md`.
+- Структура кода — **Graphify** (`.cursor/rules/graphify.mdc`); полная пересборка графа — после merge, не на каждый PR-draft.
+- Стек и запуск бота — `README.md`.
