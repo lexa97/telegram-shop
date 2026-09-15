@@ -18,7 +18,7 @@
 ## 2026-09-15 — ТЗ-02: домен заказов (жизненный цикл, snapshot)
 
 **Ветка:** `cursor/orders-domain-54d7` → `main`  
-**PR:** (создаётся)
+**PR:** https://github.com/lexa97/telegram-shop/pull/3
 
 ### Сделали
 

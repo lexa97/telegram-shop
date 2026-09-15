@@ -9,10 +9,9 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.database import Database
 from bot.database.methods.read import invalidate_user_cache
 from bot.database.methods.cache_utils import safe_create_task
-from bot.database.models.main import Goods, Operations, User
+from bot.database.models.main import Operations, User
 from bot.database.models.orders import DeliveryType, Order, OrderStatus, OrderStatusHistory
 from bot.database.money import rub_to_cents, cents_to_rub_decimal
 
