@@ -15,10 +15,42 @@
 
 ---
 
+## 2026-09-15 — ТЗ-02: домен заказов (жизненный цикл, snapshot)
+
+**Ветка:** `cursor/orders-domain-54d7` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/3
+
+### Сделали
+
+- Модели `Order`, `OrderStatusHistory`; статусы `CREATED`…`REFUNDED`, суммы в **копейках** (`BIGINT`).
+- Сервис переходов (`bot/database/methods/orders.py`): матрица переходов, snapshot при создании, `profit` при `COMPLETED`, TTL-хелпер `expire_created_if_due`, идемпотентный ручной refund на баланс, запрет user-cancel для оплаченных.
+- `BoughtGoods.order_id` (nullable FK); Alembic `e9f0a1b2c3d4` (после `a9b0c1d2e3f4`).
+- Тесты `tests/test_orders.py`; refund и баланс — копейки через `bot/money.py` (после merge ТЗ-01).
+
+### Обсуждали
+
+- Покупка через `buy_item_transaction` пока **без** привязки к `Order` — сделает ТЗ-06 (fulfillment).
+
+### Отвергли
+
+- *Менять flow покупки в этом PR* — *причина:* scope ТЗ-02 только модель и сервис статусов.
+- *Дублирующий `bot/database/money.py`* — *причина:* единый модуль `bot/money.py` с main.
+
+### Проверка
+
+- `pytest tests/test_orders.py`
+- `alembic upgrade head` (таблицы `orders`, `order_status_history`).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-15 — PR: ТЗ-01 деньги в копейках (BIGINT)
 
 **Ветка:** `cursor/money-kopecks-eee5` → `main`  
-**PR:** (создаётся)
+**PR:** https://github.com/lexa97/telegram-shop/pull/4
 
 ### Сделали
 
@@ -29,7 +61,7 @@
 
 ### Обсуждали
 
-- Фабрики тестов принимают суммы в **рулях** и конвертируют в копейки — меньше шума в тестах.
+- Фабрики тестов принимают суммы в **рублях** и конвертируют в копейки — меньше шума в тестах.
 - `sale_percent` остаётся `Numeric` (процент, не деньги).
 
 ### Отвергли
