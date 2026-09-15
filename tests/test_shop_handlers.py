@@ -83,7 +83,7 @@ class TestCartHandlers:
         await item_factory(name="WarnItem", price=100, values=[("v", False)])
         async with Database().session() as s:
             s.add(PromoCodes(
-                code="WARNEXP", discount_type="percent", discount_value=Decimal("10"),
+                code="WARNEXP", discount_type="percent", discount_value=10,
                 scope="global", is_active=True,
                 expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
             ))
@@ -561,7 +561,7 @@ class TestAppliedPromoDoesNotFollowTheUser:
         from decimal import Decimal
         async with Database().session() as s:
             s.add(PromoCodes(
-                code=code, discount_type="percent", discount_value=Decimal(percent),
+                code=code, discount_type="percent", discount_value=int(percent),
                 scope=kw.pop("scope", "global"), max_uses=0, current_uses=0,
                 is_active=True, **kw,
             ))

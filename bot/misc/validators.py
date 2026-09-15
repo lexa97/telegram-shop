@@ -3,6 +3,8 @@ from typing import Optional, Annotated, Self
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 import re
 
+from bot.money import rub_to_cents
+
 
 class PaymentRequest(BaseModel):
     """Validate payment request data"""
@@ -38,13 +40,13 @@ class ItemPurchaseRequest(BaseModel):
 class UserDataUpdate(BaseModel):
     """Validate user data updates"""
     telegram_id: int = Field(..., gt=0)
-    balance: Optional[Decimal] = Field(None, ge=0, le=1000000)
+    balance: Optional[int] = Field(None, ge=0, le=100_000_000)
 
     # Removed role_id as it's not used in the current implementation
 
     @field_validator('balance')
     @classmethod
-    def validate_balance(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+    def validate_balance(cls, v: Optional[int]) -> Optional[int]:
         if v is not None and v < 0:
             raise ValueError('Balance cannot be negative')
         return v
@@ -136,8 +138,8 @@ def validate_telegram_id(telegram_id) -> int:
 
 
 def validate_money_amount(amount, min_amount: Decimal = Decimal("0.01"),
-                          max_amount: Decimal = Decimal("1000000")) -> Decimal:
-    """Validate money amount"""
+                          max_amount: Decimal = Decimal("1000000")) -> int:
+    """Validate a ruble amount from user input; return kopecks."""
     try:
         decimal_amount = Decimal(str(amount))
 
@@ -146,8 +148,7 @@ def validate_money_amount(amount, min_amount: Decimal = Decimal("0.01"),
         if decimal_amount > max_amount:
             raise ValueError(f"Amount cannot exceed {max_amount}")
 
-        # Round to 2 decimal places
-        return decimal_amount.quantize(Decimal("0.01"))
+        return rub_to_cents(decimal_amount)
     except Exception as e:
         raise ValueError(f"Invalid amount: {e}")
 

@@ -146,6 +146,7 @@ class TestEarningDetail:
 
         earning_info = await get_one_referral_earning(earning_id)
         assert earning_info is not None
-        assert earning_info['amount'] == 100
-        assert earning_info['original_amount'] == 1000
+        from bot.money import rub_to_cents
+        assert earning_info['amount'] == rub_to_cents(100)
+        assert earning_info['original_amount'] == rub_to_cents(1000)
         assert earning_info['referral_id'] == 700031

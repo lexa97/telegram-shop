@@ -3,6 +3,7 @@ from html import escape as _esc
 from bot.i18n import localize
 from bot.logger_mesh import logger
 from bot.misc import EnvKeys
+from bot.money import format_cents_for_ui
 
 # Numeric(12, 2) leaves 10 integer digits; anything larger is a DB error. Shared by the add and the update flows so they cannot drift.
 MAX_ITEM_PRICE = 99_999_999
@@ -42,8 +43,8 @@ def user_profile_lines(user, first_name, target_id, *, overall_balance,
         localize('profile.caption', name=_esc(str(first_name or '')), id=target_id),
         '',
         localize('profile.id', id=target_id),
-        localize('profile.balance', amount=user.get('balance'), currency=EnvKeys.PAY_CURRENCY),
-        localize('profile.total_topup', amount=overall_balance, currency=EnvKeys.PAY_CURRENCY),
+        localize('profile.balance', amount=format_cents_for_ui(int(user.get('balance') or 0)), currency=EnvKeys.PAY_CURRENCY),
+        localize('profile.total_topup', amount=format_cents_for_ui(int(overall_balance)), currency=EnvKeys.PAY_CURRENCY),
         localize('profile.purchased_count', count=items_count),
         '',
     ]

@@ -9,6 +9,11 @@ from sqlalchemy import select
 
 from bot.database.main import Database
 from bot.database.models.main import User, BoughtGoods, Operations, Payments
+from bot.money import cents_to_csv_amount
+
+_MONEY_COLUMNS = frozenset({
+    "balance", "price", "operation_value", "amount",
+})
 
 
 BATCH_SIZE = 1000
@@ -54,7 +59,12 @@ async def _stream_csv(query, columns, session_maker, keyset_column):
             break
 
         for row in rows:
-            values = [getattr(row, c, row[i]) if hasattr(row, c) else row[i] for i, c in enumerate(columns)]
+            values = []
+            for i, c in enumerate(columns):
+                v = getattr(row, c, row[i]) if hasattr(row, c) else row[i]
+                if c in _MONEY_COLUMNS and v is not None:
+                    v = cents_to_csv_amount(int(v))
+                values.append(v)
             writer.writerow([_sanitize_cell(v) for v in values])
 
         last_key = rows[-1][0]

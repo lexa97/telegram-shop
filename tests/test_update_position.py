@@ -232,7 +232,8 @@ class TestMetadataOnlyUpdate:
 
         assert await get_item_info("MetaOnly") is None
         item = await get_item_info("MetaRenamed")
-        assert item["price"] == Decimal("200")
+        from bot.money import rub_to_cents
+        assert item["price"] == rub_to_cents("200")
         assert item["description"] == "New description"
         # Stock survives a metadata-only edit.
         assert await select_item_values_amount("MetaRenamed") == 1

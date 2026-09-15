@@ -19,9 +19,14 @@ from bot.states import PromoFSM
 
 async def _make_promo(code="SAVE10", discount_type="percent", value=10, **kw):
     """Insert a promo directly and return its id."""
+    from bot.money import rub_to_cents
+    if discount_type == "percent":
+        stored = int(value)
+    else:
+        stored = rub_to_cents(value)
     async with Database().session() as s:
         promo = PromoCodes(
-            code=code.upper(), discount_type=discount_type, discount_value=value,
+            code=code.upper(), discount_type=discount_type, discount_value=stored,
             max_uses=kw.pop("max_uses", 0), current_uses=kw.pop("current_uses", 0),
             is_active=kw.pop("is_active", True), **kw,
         )

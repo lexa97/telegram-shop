@@ -17,6 +17,7 @@ from bot.handlers.other import _any_payment_method_enabled, is_safe_item_name, c
 from bot.misc.metrics import get_metrics
 from bot.misc.services import CryptoPayAPI, CryptoPayAPIError, send_stars_invoice, send_fiat_invoice
 from bot.misc.services.payment import _minor_units_for, payload_amount
+from bot.money import rub_to_cents, format_cents_for_ui, cents_to_float_rub
 from bot.filters import ValidAmountFilter
 from bot.i18n import localize, esc
 from bot.states import BalanceStates
@@ -24,19 +25,19 @@ from bot.states import BalanceStates
 router = Router()
 
 
-async def _notify_referrer_bonus(bot, user_id: int, amount: Decimal | int, payer_name: str, payer_id: int):
+async def _notify_referrer_bonus(bot, user_id: int, amount_cents: int, payer_name: str, payer_id: int):
     """Send referral bonus notification to the referrer if applicable."""
     referral_id = await get_user_referral(user_id)
     if not referral_id or not EnvKeys.REFERRAL_PERCENT:
         return
     try:
         clamped_percent = min(max(EnvKeys.REFERRAL_PERCENT, 0), 99)
-        bonus = (Decimal(clamped_percent) / Decimal(100) * Decimal(amount)).quantize(Decimal("0.01"))
-        if bonus > 0:
+        bonus_cents = (amount_cents * clamped_percent) // 100
+        if bonus_cents > 0:
             await bot.send_message(
                 referral_id,
                 localize('payments.referral.bonus',
-                         amount=bonus, name=esc(payer_name),
+                         amount=format_cents_for_ui(bonus_cents), name=esc(payer_name),
                          id=payer_id, currency=EnvKeys.PAY_CURRENCY),
                 reply_markup=close()
             )
@@ -69,7 +70,7 @@ async def replenish_balance_amount(message: Message, state: FSMContext):
             max_amount=Decimal(EnvKeys.MAX_AMOUNT)
         )
 
-        await state.update_data(amount=int(amount))
+        await state.update_data(amount_cents=amount)
 
         await message.answer(
             localize("payments.method_choose"),
@@ -108,9 +109,11 @@ async def invalid_amount(message: Message, state: FSMContext):
 async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
     """Create an invoice for the chosen payment method."""
     data = await state.get_data()
-    amount = data.get('amount')
+    amount_cents = data.get('amount_cents')
+    if amount_cents is None and data.get('amount') is not None:
+        amount_cents = rub_to_cents(data.get('amount'))
 
-    if amount is None:
+    if amount_cents is None:
         await call.answer(localize("payments.session_expired"), show_alert=True)
         await call.message.edit_text(localize("menu.title"), reply_markup=back('back_to_menu'))
         await state.clear()
@@ -126,13 +129,12 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
 
     try:
         # Validate payment request
+        amount_dec = Decimal(amount_cents) / Decimal(100)
         payment_request = PaymentRequest(
-            amount=Decimal(amount),
+            amount=amount_dec,
             currency=EnvKeys.PAY_CURRENCY,
             provider=provider
         )
-
-        amount_dec = payment_request.amount
         ttl_seconds = int(EnvKeys.PAYMENT_TIME)
 
         if call.data == "pay_cryptopay":
@@ -165,7 +167,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                 provider="cryptopay",
                 external_id=str(invoice_id),
                 user_id=call.from_user.id,
-                amount=int(amount_dec),
+                amount=amount_cents,
                 currency=payment_request.currency,
             )
 
@@ -254,16 +256,18 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
 
         status = info.get("status")
         if status == "paid":
-            balance_amount = Decimal(str(info.get("amount", "0"))).quantize(Decimal("0.01"))
+            balance_amount_cents = rub_to_cents(
+                Decimal(str(info.get("amount", "0"))).quantize(Decimal("0.01"))
+            )
 
-            if balance_amount <= 0:
+            if balance_amount_cents <= 0:
                 await call.answer(localize("payments.unable_determine_amount"), show_alert=True)
                 return
 
             # Use transactional payment processing
             success, error_msg = await process_payment_with_referral(
                 user_id=user_id,
-                amount=balance_amount,
+                amount=balance_amount_cents,
                 provider="cryptopay",
                 external_id=str(invoice_id),
                 referral_percent=EnvKeys.REFERRAL_PERCENT
@@ -278,14 +282,16 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
 
             metrics = get_metrics()
             if metrics:
-                metrics.track_event("payment", user_id, {"amount": balance_amount, "provider": "cryptopay"})
+                metrics.track_event("payment", user_id, {"amount": balance_amount_cents, "provider": "cryptopay"})
 
             # Send a notification to the referrer
-            await _notify_referrer_bonus(call.bot, user_id, balance_amount, call.from_user.first_name, call.from_user.id)
+            await _notify_referrer_bonus(
+                call.bot, user_id, balance_amount_cents, call.from_user.first_name, call.from_user.id,
+            )
 
             await call.message.edit_text(
                 localize("payments.topped_simple",
-                         amount=balance_amount,
+                         amount=format_cents_for_ui(balance_amount_cents),
                          currency=EnvKeys.PAY_CURRENCY),
                 reply_markup=back('profile')
             )
@@ -295,7 +301,7 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
                 "balance_replenish",
                 user_id=user_id,
                 resource_type="Payment",
-                details=f"name={caller_name(call)}, amount={balance_amount} {EnvKeys.PAY_CURRENCY}, provider=cryptopay",
+                details=f"name={caller_name(call)}, amount={format_cents_for_ui(balance_amount_cents)} {EnvKeys.PAY_CURRENCY}, provider=cryptopay",
             ))
 
         elif status == "active":
@@ -379,9 +385,11 @@ async def successful_payment_handler(message: Message):
             user_id, sp.total_amount, sp.currency, external_id,
         )
 
+    amount_cents = rub_to_cents(amount)
+
     success, error_msg = await process_payment_with_referral(
         user_id=user_id,
-        amount=Decimal(amount),
+        amount=amount_cents,
         provider=provider,
         external_id=external_id,
         referral_percent=EnvKeys.REFERRAL_PERCENT
@@ -395,16 +403,23 @@ async def successful_payment_handler(message: Message):
         return
 
     # Sending notification to referrer
-    await _notify_referrer_bonus(message.bot, user_id, amount, message.from_user.first_name, message.from_user.id)
+    await _notify_referrer_bonus(
+        message.bot, user_id, amount_cents, message.from_user.first_name, message.from_user.id,
+    )
 
     metrics = get_metrics()
     if metrics:
-        metrics.track_event("payment", user_id, {"amount": amount, "provider": provider})
+        metrics.track_event("payment", user_id, {"amount": amount_cents, "provider": provider})
 
     suffix = localize("payments.success_suffix.stars") if sp.currency == "XTR" else localize(
         "payments.success_suffix.tg")
     await message.answer(
-        localize('payments.topped_with_suffix', amount=amount, suffix=suffix, currency=EnvKeys.PAY_CURRENCY),
+        localize(
+            'payments.topped_with_suffix',
+            amount=format_cents_for_ui(amount_cents),
+            suffix=suffix,
+            currency=EnvKeys.PAY_CURRENCY,
+        ),
         reply_markup=back('profile')
     )
 

@@ -3,6 +3,7 @@ from decimal import Decimal
 from sqlalchemy import select, func
 
 from bot.database.main import Database
+from bot.money import rub_to_cents, cents_to_float_rub
 import pytest
 
 from bot.database.methods.transactions import buy_item_transaction, \
@@ -19,7 +20,7 @@ async def _get_balance(telegram_id: int) -> float:
     async with Database().session() as s:
         result = await s.execute(select(User).where(User.telegram_id == telegram_id))
         user = result.scalars().one()
-        return float(user.balance)
+        return cents_to_float_rub(user.balance)
 
 
 class TestBuyItemTransaction:
@@ -48,7 +49,7 @@ class TestBuyItemTransaction:
             assert len(bought) == 1
             assert bought[0].item_name == "Widget"
             assert bought[0].value == "val1"
-            assert float(bought[0].price) == 100.0
+            assert cents_to_float_rub(bought[0].price) == 100.0
 
             widget = (await s.execute(select(Goods).where(Goods.name == "Widget"))).scalars().first()
             iv_count = (await s.execute(select(func.count()).select_from(ItemValues).where(
@@ -153,6 +154,17 @@ class TestBuyItemTransaction:
             ))).scalar()
             assert iv_count == 0
 
+    async def test_concurrent_purchases_do_not_overdraw(self, user_factory, item_factory):
+        await user_factory(telegram_id=500100, balance=100)
+        await item_factory(name="RaceItem", price=100, values=[("a", False), ("b", False)])
+
+        r1, r2 = await asyncio.gather(
+            buy_item_transaction(500100, "RaceItem"),
+            buy_item_transaction(500100, "RaceItem"),
+        )
+        assert sum(1 for r in (r1, r2) if r[0]) == 1
+        assert await _get_balance(500100) == 0.0
+
     async def test_buy_item_exact_balance(self, user_factory, item_factory):
         await user_factory(telegram_id=100007, balance=100)
         await item_factory(name="Exact", price=100, values=[("exactval", False)])
@@ -173,7 +185,7 @@ class TestProcessPaymentWithReferral:
 
         success, msg = await process_payment_with_referral(
             user_id=200001,
-            amount=Decimal("500"),
+            amount=rub_to_cents("500"),
             provider="test_provider",
             external_id="ext_001",
         )
@@ -191,7 +203,7 @@ class TestProcessPaymentWithReferral:
             ))).scalars().first()
             assert payment is not None
             assert payment.status == "succeeded"
-            assert float(payment.amount) == 500.0
+            assert cents_to_float_rub(payment.amount) == 500.0
             assert payment.provider == "test_provider"
 
             # Operation record created
@@ -199,7 +211,7 @@ class TestProcessPaymentWithReferral:
                 Operations.user_id == 200001
             ))).scalars().all()
             assert len(ops) == 1
-            assert float(ops[0].operation_value) == 500.0
+            assert cents_to_float_rub(ops[0].operation_value) == 500.0
 
     async def test_payment_idempotency(self, user_factory):
         await user_factory(telegram_id=200002, balance=0)
@@ -207,7 +219,7 @@ class TestProcessPaymentWithReferral:
         # First call succeeds
         success1, msg1 = await process_payment_with_referral(
             user_id=200002,
-            amount=Decimal("300"),
+            amount=rub_to_cents("300"),
             provider="prov_a",
             external_id="ext_dup",
         )
@@ -217,7 +229,7 @@ class TestProcessPaymentWithReferral:
         # Second call with same provider+external_id
         success2, msg2 = await process_payment_with_referral(
             user_id=200002,
-            amount=Decimal("300"),
+            amount=rub_to_cents("300"),
             provider="prov_a",
             external_id="ext_dup",
         )
@@ -235,7 +247,7 @@ class TestProcessPaymentWithReferral:
 
         success, msg = await process_payment_with_referral(
             user_id=200003,
-            amount=Decimal("100"),
+            amount=rub_to_cents("100"),
             provider="prov_ref",
             external_id="ext_ref_001",
             referral_percent=10,
@@ -257,8 +269,8 @@ class TestProcessPaymentWithReferral:
                 ReferralEarnings.referral_id == 200003,
             ))).scalars().all()
             assert len(earnings) == 1
-            assert float(earnings[0].amount) == 10.0
-            assert float(earnings[0].original_amount) == 100.0
+            assert cents_to_float_rub(earnings[0].amount) == 10.0
+            assert cents_to_float_rub(earnings[0].original_amount) == 100.0
 
     async def test_payment_no_referrer(self, user_factory):
         # User without referral_id
@@ -266,7 +278,7 @@ class TestProcessPaymentWithReferral:
 
         success, msg = await process_payment_with_referral(
             user_id=200004,
-            amount=Decimal("200"),
+            amount=rub_to_cents("200"),
             provider="prov_noref",
             external_id="ext_noref",
             referral_percent=10,
@@ -290,7 +302,7 @@ class TestProcessPaymentWithReferral:
 
         success, msg = await process_payment_with_referral(
             user_id=200005,
-            amount=Decimal("100"),
+            amount=rub_to_cents("100"),
             provider="prov_zero",
             external_id="ext_zero",
             referral_percent=0,
@@ -317,7 +329,7 @@ class TestProcessPaymentWithReferral:
             provider="prov_pend",
             external_id="ext_pend",
             user_id=200006,
-            amount=250,
+            amount=rub_to_cents(250),
             currency="RUB",
         )
 
@@ -333,7 +345,7 @@ class TestProcessPaymentWithReferral:
         # Now process it
         success, msg = await process_payment_with_referral(
             user_id=200006,
-            amount=Decimal("250"),
+            amount=rub_to_cents("250"),
             provider="prov_pend",
             external_id="ext_pend",
         )
@@ -357,7 +369,7 @@ class TestProcessPaymentWithReferral:
 
         success, msg = await process_payment_with_referral(
             user_id=200007,
-            amount=Decimal("99999"),
+            amount=rub_to_cents("99999"),
             provider="prov_large",
             external_id="ext_large",
         )
@@ -373,7 +385,7 @@ class TestProcessPaymentWithReferral:
                 Payments.external_id == "ext_large"
             ))).scalars().first()
             assert payment is not None
-            assert float(payment.amount) == 99999.0
+            assert cents_to_float_rub(payment.amount) == 99999.0
 
 
 class TestAdminBalanceChange:
@@ -381,7 +393,7 @@ class TestAdminBalanceChange:
     async def test_topup_success(self, user_factory):
         await user_factory(telegram_id=300001, balance=100)
 
-        success, msg = await admin_balance_change(300001, 500)
+        success, msg = await admin_balance_change(300001, rub_to_cents(500))
 
         assert success is True
         assert msg == "success"
@@ -393,12 +405,12 @@ class TestAdminBalanceChange:
                 Operations.user_id == 300001
             ))).scalars().all()
             assert len(ops) == 1
-            assert float(ops[0].operation_value) == 500.0
+            assert cents_to_float_rub(ops[0].operation_value) == 500.0
 
     async def test_deduct_success(self, user_factory):
         await user_factory(telegram_id=300002, balance=500)
 
-        success, msg = await admin_balance_change(300002, -200)
+        success, msg = await admin_balance_change(300002, -rub_to_cents(200))
 
         assert success is True
         assert msg == "success"
@@ -410,12 +422,12 @@ class TestAdminBalanceChange:
                 Operations.user_id == 300002
             ))).scalars().all()
             assert len(ops) == 1
-            assert float(ops[0].operation_value) == -200.0
+            assert cents_to_float_rub(ops[0].operation_value) == -200.0
 
     async def test_deduct_insufficient_funds(self, user_factory):
         await user_factory(telegram_id=300003, balance=100)
 
-        success, msg = await admin_balance_change(300003, -200)
+        success, msg = await admin_balance_change(300003, -rub_to_cents(200))
         assert success is False
         assert msg == "insufficient_funds"
 
@@ -432,13 +444,13 @@ class TestAdminBalanceChange:
     async def test_deduct_exact_balance(self, user_factory):
         await user_factory(telegram_id=300004, balance=500)
 
-        success, msg = await admin_balance_change(300004, -500)
+        success, msg = await admin_balance_change(300004, -rub_to_cents(500))
 
         assert success is True
         assert await _get_balance(300004) == 0.0
 
     async def test_user_not_found(self):
-        success, msg = await admin_balance_change(999888, 100)
+        success, msg = await admin_balance_change(999888, rub_to_cents(100))
 
         assert success is False
         assert msg == "user_not_found"
@@ -447,8 +459,8 @@ class TestAdminBalanceChange:
         """Verify that balance and operation are created atomically."""
         await user_factory(telegram_id=300005, balance=1000)
 
-        await admin_balance_change(300005, 500)
-        await admin_balance_change(300005, -300)
+        await admin_balance_change(300005, rub_to_cents(500))
+        await admin_balance_change(300005, -rub_to_cents(300))
 
         assert await _get_balance(300005) == 1200.0
 
@@ -457,15 +469,19 @@ class TestAdminBalanceChange:
                 Operations.user_id == 300005
             ).order_by(Operations.id))).scalars().all()
             assert len(ops) == 2
-            assert float(ops[0].operation_value) == 500.0
-            assert float(ops[1].operation_value) == -300.0
+            assert cents_to_float_rub(ops[0].operation_value) == 500.0
+            assert cents_to_float_rub(ops[1].operation_value) == -300.0
 
 
 async def _make_promo(code, discount_type="percent", value="10", *, category_id=None):
+    if discount_type == "percent":
+        stored = int(value)
+    else:
+        stored = rub_to_cents(value)
     async with Database().session() as s:
         s.add(PromoCodes(
             code=code.upper(), discount_type=discount_type,
-            discount_value=Decimal(str(value)), max_uses=0,
+            discount_value=stored, max_uses=0,
             current_uses=0, is_active=True, category_id=category_id,
         ))
 
@@ -506,7 +522,7 @@ class TestCheckoutCartTransaction:
                 select(BoughtGoods).where(BoughtGoods.buyer_id == 400001)
             )).scalars().all()
             assert len(bought) == 3
-            assert sum(float(b.price) for b in bought) == 150.0
+            assert sum(cents_to_float_rub(b.price) for b in bought) == 150.0
 
     async def test_partial_stock_aborts_and_changes_nothing(self, user_factory, item_factory):
         await user_factory(telegram_id=400002, balance=500)
@@ -611,14 +627,14 @@ class TestCheckoutCartTransaction:
         assert (success, msg) == (True, "success")
         assert len(results) == 3
         assert sorted(r["price"] for r in results) == [9.99, 10.0, 10.0]
-        assert _receipt_total(results) == Decimal("29.99")   # no cents lost or invented
+        assert _receipt_total(results) == "29.99"   # no cents lost or invented
         assert await _get_balance(400009) == round(500.0 - 29.99, 2)
 
         async with Database().session() as s:
             bought = (await s.execute(
                 select(BoughtGoods).where(BoughtGoods.buyer_id == 400009)
             )).scalars().all()
-            assert sum((b.price for b in bought), Decimal(0)) == Decimal("29.99")
+            assert sum(b.price for b in bought) == rub_to_cents("29.99")
 
     async def test_category_promo_recorded_once_across_lines(self, user_factory, item_factory,
                                                              category_factory):

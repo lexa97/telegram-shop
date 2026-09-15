@@ -1,5 +1,4 @@
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import select, exists, func as sa_func, insert as sa_insert
 from sqlalchemy.exc import IntegrityError
@@ -37,6 +36,7 @@ async def create_user(telegram_id: int, registration_date: datetime, referral_id
 
 
 async def create_item(item_name: str, item_description: str, item_price: int, category_name: str) -> None:
+    """``item_price`` is in kopecks."""
     """Insert item (goods); commit. Resolves category_name to category_id."""
     async with Database().session() as s:
         result = await s.execute(select(exists().where(Goods.name == item_name)))
@@ -194,7 +194,7 @@ async def create_pending_payment(provider: str, external_id: str, user_id: int, 
             provider=provider,
             external_id=external_id,
             user_id=user_id,
-            amount=Decimal(amount),
+            amount=int(amount),
             currency=currency,
             status="pending"
         ))
@@ -225,10 +225,15 @@ async def create_promo_code(
 
     Raises ValueError if bound to both a category and an item.
     """
-    from decimal import Decimal
+    from bot.money import rub_to_cents
 
     if category_id is not None and item_id is not None:
         raise ValueError("a promo code cannot be bound to both a category and an item")
+
+    if discount_type == 'percent':
+        stored_value = int(discount_value)
+    else:
+        stored_value = rub_to_cents(discount_value)
 
     async with Database().session() as s:
         result = await s.execute(select(exists().where(PromoCodes.code == code.upper())))
@@ -237,7 +242,7 @@ async def create_promo_code(
         promo = PromoCodes(
             code=code.upper(),
             discount_type=discount_type,
-            discount_value=Decimal(str(discount_value)),
+            discount_value=stored_value,
             scope=promo_scope_for(category_id, item_id),
             max_uses=max_uses,
             expires_at=expires_at,
