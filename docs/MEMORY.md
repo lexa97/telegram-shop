@@ -15,6 +15,36 @@
 
 ---
 
+## 2026-09-15 — PR: подготовка Graphify + skill pr-memory-graphify
+
+**Ветка:** `cursor/graphiti-memory-setup-3d1e` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/1
+
+### Сделали
+
+- Локальный **Graphify** (`graphify-out/`, `devtools/graphify/`).
+- Журнал **MEMORY.md** и skill **`/pr-memory-graphify`**: память при готовности PR, Graphify после merge.
+- Скрипт `devtools/graphify/refresh-after-merge.sh`.
+
+### Обсуждали
+
+- Graphiti (Neo4j/OpenAI) vs **Graphify** — нужен локальный граф без API.
+
+### Отвергли
+
+- *Graphiti + Neo4j + OpenAI* — *причина:* пользователю нужен локальный **graphify**, не Zep Graphiti.
+
+### Проверка
+
+- `graphify update .` и `graphify cluster-only . --no-label` на репозитории.
+- Skill: `.cursor/skills/pr-memory-graphify/SKILL.md`.
+
+### Graphify
+
+- После merge PR #1: `git checkout main && git pull && ./devtools/graphify/refresh-after-merge.sh`, коммит `graphify-out/`.
+
+---
+
 ## 2026-09-15 — Подготовка окружения
 
 ### Контекст
