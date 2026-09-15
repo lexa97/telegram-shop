@@ -13,6 +13,8 @@
 
 **Ритуал:** PR готов → запись в MEMORY в ветке PR; PR смержен → обновить `graphify-out/` на `main`.
 
+**Справочник по коду для агентов:** [`AGENT_CODEBASE.md`](AGENT_CODEBASE.md) — модули, модели, транзакции, сценарии.
+
 ---
 
 ## 2026-09-15 — PR: подготовка Graphify + skill pr-memory-graphify
