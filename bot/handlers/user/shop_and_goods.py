@@ -22,6 +22,7 @@ from bot.database.methods.create import create_review, subscribe_to_stock
 from bot.database.methods.delete import unsubscribe_from_stock
 from bot.database.methods.lazy_queries import query_item_reviews, query_goods_search, query_items_in_category
 from bot.database.methods.transactions import redeem_balance_promo
+from bot.money import format_cents_for_ui
 from bot.database.methods.audit import log_audit_bg
 from bot.database.models import Permission
 from bot.keyboards import item_info, back, lazy_paginated_keyboard
@@ -123,18 +124,22 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
     if discounted is not None:
         price_line = localize(
             "shop.item.price_discounted",
-            original=original_price, discounted=discounted,
+            original=format_cents_for_ui(original_price),
+            discounted=format_cents_for_ui(discounted),
             currency=EnvKeys.PAY_CURRENCY, code=esc(applied_promo),
         )
     elif on_sale:
         percent = (Decimal(str(item_info_data.get("sale_percent") or 0))).quantize(Decimal("1"))
         price_line = localize(
             "shop.item.price_sale",
-            original=original_price, sale=sale_price,
+            original=format_cents_for_ui(original_price),
+            sale=format_cents_for_ui(sale_price),
             currency=EnvKeys.PAY_CURRENCY, percent=percent,
         )
     else:
-        price_line = localize("shop.item.price", amount=price, currency=EnvKeys.PAY_CURRENCY)
+        price_line = localize(
+            "shop.item.price", amount=format_cents_for_ui(price), currency=EnvKeys.PAY_CURRENCY,
+        )
 
     markup = item_info(
         back_data,
@@ -564,7 +569,10 @@ async def redeem_promo_code_handler(message: Message, state: FSMContext):
 
     if success:
         await message.answer(
-            localize("promo.balance_redeemed", code=code, amount=amount, currency=EnvKeys.PAY_CURRENCY),
+            localize(
+                "promo.balance_redeemed",
+                code=code, amount=format_cents_for_ui(amount), currency=EnvKeys.PAY_CURRENCY,
+            ),
             reply_markup=back("profile"),
         )
         log_audit_bg(
@@ -837,7 +845,11 @@ async def bought_item_info_callback_handler(call: CallbackQuery):
 
     text = "\n".join([
         localize("purchases.item.name", name=esc(item["item_name"])),
-        localize("purchases.item.price", amount=item["price"], currency=EnvKeys.PAY_CURRENCY),
+        localize(
+            "purchases.item.price",
+            amount=format_cents_for_ui(int(item["price"])),
+            currency=EnvKeys.PAY_CURRENCY,
+        ),
         localize("purchases.item.datetime", dt=item["bought_datetime"]),
         localize("purchases.item.unique_id", uid=item["unique_id"]),
         localize("purchases.item.value", value=esc(item["value"])),

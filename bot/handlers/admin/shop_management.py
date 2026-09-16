@@ -28,6 +28,7 @@ from bot.database.methods.audit import log_audit
 from bot.database.methods.cache_utils import safe_create_task
 from bot.misc import EnvKeys, LazyPaginator, SearchQuery, StatsCache, get_cache_manager
 from bot.i18n import localize, esc
+from bot.money import format_cents_for_ui
 from bot.states import GoodsFSM
 
 router = Router()
@@ -313,7 +314,7 @@ async def process_item_show(message: Message, state: FSMContext):
 
             text = (
                 f"{localize('purchases.item.name', name=esc(item['item_name']))}\n"
-                f"{localize('purchases.item.price', amount=item['price'], currency=EnvKeys.PAY_CURRENCY)}\n"
+                f"{localize('purchases.item.price', amount=format_cents_for_ui(int(item['price'])), currency=EnvKeys.PAY_CURRENCY)}\n"
                 f"{localize('purchases.item.datetime', dt=item['bought_datetime'])}\n"
                 f"{localize('purchases.item.buyer', buyer=item['buyer_id'])}\n"
                 f"{localize('purchases.item.unique_id', uid=item['unique_id'])}\n"

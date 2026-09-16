@@ -395,7 +395,7 @@ class TestAtomicStockReplacement:
         assert await get_item_info("ToInfinite") is None
         info = await get_item_info("NowInfinite")
         assert info["description"] == "new desc"
-        assert int(info["price"]) == 250
+        assert int(info["price"]) == rub_to_cents(250)
         # Exactly one row, and it is the infinite one.
         assert await select_item_values_amount("NowInfinite") == 1
         assert await check_value("NowInfinite") is True

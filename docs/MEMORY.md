@@ -18,14 +18,14 @@
 ## 2026-09-15 — ТЗ-02: домен заказов (жизненный цикл, snapshot)
 
 **Ветка:** `cursor/orders-domain-54d7` → `main`  
-**PR:** https://github.com/lexa97/telegram-shop/pull/3
+**PR:** https://github.com/lexa97/telegram-shop/pull/3 (смержен в `main`)
 
 ### Сделали
 
 - Модели `Order`, `OrderStatusHistory`; статусы `CREATED`…`REFUNDED`, суммы в **копейках** (`BIGINT`).
 - Сервис переходов (`bot/database/methods/orders.py`): матрица переходов, snapshot при создании, `profit` при `COMPLETED`, TTL-хелпер `expire_created_if_due`, идемпотентный ручной refund на баланс, запрет user-cancel для оплаченных.
 - `BoughtGoods.order_id` (nullable FK); Alembic `e9f0a1b2c3d4` (после `a9b0c1d2e3f4`).
-- Тесты `tests/test_orders.py`; refund и баланс — копейки через `bot/money.py` (после merge ТЗ-01).
+- Тесты `tests/test_orders.py`; refund и баланс — копейки через `bot/money.py`.
 
 ### Обсуждали
 
@@ -50,7 +50,7 @@
 ## 2026-09-15 — PR: ТЗ-01 деньги в копейках (BIGINT)
 
 **Ветка:** `cursor/money-kopecks-eee5` → `main`  
-**PR:** https://github.com/lexa97/telegram-shop/pull/4
+**PR:** https://github.com/lexa97/telegram-shop/pull/6
 
 ### Сделали
 
@@ -58,6 +58,7 @@
 - Alembic `a9b0c1d2e3f4`: денежные колонки → `BIGINT` копеек, промо `fixed`/`balance` ×100, `CHECK balance >= 0`.
 - Модели, pricing, transactions, платежи, админка, корзина, экспорт CSV — единый контракт копеек в БД, рубли в UI.
 - Тесты и factories переведены; добавлен `tests/test_money.py`.
+- Merge с `main` (ТЗ-02): единый контракт — **рубли на границе handlers**, `rub_to_cents` внутри `create_item` / `replace_item_stock_and_meta` (не дублировать в handlers).
 
 ### Обсуждали
 
@@ -71,7 +72,11 @@
 
 ### Проверка
 
-- `python3 -m pytest -q` (966+ тестов).
+- `python3 -m pytest -q` (966+ тестов, включая `tests/test_orders.py`).
+- Исправление UX: карточка товара и корзина оба через `format_cents_for_ui`; `create_item` / `replace_item_stock_and_meta` принимают **рубли** и конвертируют внутри.
+- Профиль пользователя (`profile`): баланс и сумма пополнений через `format_cents_for_ui`.
+- SQLAdmin `Users`: баланс в списке/форме в рублях, при сохранении `rub_to_cents`.
+- Товары с ошибочной ценой после миграции — пересохранить цену в админке.
 - Миграция: `alembic upgrade head` на Postgres после деплоя.
 
 ### Graphify
