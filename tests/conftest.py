@@ -301,8 +301,6 @@ def item_factory(category_factory):
     """Factory to create items with optional stock values."""
     from bot.database.methods.create import create_item, add_values_to_item
 
-    from bot.money import rub_to_cents
-
     async def _create(
             name: str = "TestItem",
             price: int = 100,
@@ -311,7 +309,7 @@ def item_factory(category_factory):
             values: list = None,
     ):
         await category_factory(category)
-        await create_item(name, description, rub_to_cents(price), category)
+        await create_item(name, description, price, category)
         if values:
             for val, is_inf in values:
                 await add_values_to_item(name, val, is_inf)
