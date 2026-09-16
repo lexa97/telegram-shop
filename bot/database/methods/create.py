@@ -8,6 +8,7 @@ from bot.database.models.main import PromoCodes, CartItems, Reviews, StockSubscr
 from bot.database import Database
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.read import invalidate_stats_cache, invalidate_item_cache, invalidate_category_cache
+from bot.money import rub_to_cents
 
 # Cart limits: distinct positions per cart, and units of any one position.
 CART_MAX_ITEMS = 10
@@ -36,8 +37,8 @@ async def create_user(telegram_id: int, registration_date: datetime, referral_id
 
 
 async def create_item(item_name: str, item_description: str, item_price: int, category_name: str) -> None:
-    """``item_price`` is in kopecks."""
-    """Insert item (goods); commit. Resolves category_name to category_id."""
+    """Insert item (goods); commit. ``item_price`` is whole rubles from admin; stored as kopecks."""
+    price_cents = rub_to_cents(item_price)
     async with Database().session() as s:
         result = await s.execute(select(exists().where(Goods.name == item_name)))
         if result.scalar():
@@ -49,7 +50,7 @@ async def create_item(item_name: str, item_description: str, item_price: int, ca
             Goods(
                 name=item_name,
                 description=item_description,
-                price=item_price,
+                price=price_cents,
                 category_id=cat,
             )
         )

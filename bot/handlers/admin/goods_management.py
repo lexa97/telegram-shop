@@ -15,6 +15,7 @@ from bot.keyboards.inline import back, simple_buttons, lazy_paginated_keyboard
 from bot.database.methods.audit import log_audit
 from bot.filters import HasPermissionFilter
 from bot.misc import EnvKeys, LazyPaginator
+from bot.money import format_cents_for_ui
 from bot.states import GoodsFSM
 
 router = Router()
@@ -233,7 +234,7 @@ async def item_info_callback_handler(call: CallbackQuery, state: FSMContext):
 
     text = (
         f'{localize("admin.goods.item.info.position", name=esc(item_info["item_name"]))}\n'
-        f'{localize("admin.goods.item.info.price", price=position_info["price"], currency=EnvKeys.PAY_CURRENCY)}\n'
+        f'{localize("admin.goods.item.info.price", price=format_cents_for_ui(int(position_info["price"])), currency=EnvKeys.PAY_CURRENCY)}\n'
         f'{localize("admin.goods.item.info.id", id=item_info["id"])}\n'
         f'{localize("admin.goods.item.info.value", value=esc(item_info["value"]))}'
     )

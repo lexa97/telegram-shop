@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from bot.money import cents_to_float_rub
+from bot.money import cents_to_float_rub, rub_to_cents
 
 from sqlalchemy import select, exists, delete as sa_delete, update as sa_update
 from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
@@ -641,7 +641,7 @@ async def replace_item_stock_and_meta(
             # 3. Update the metadata.
             goods.name = new_name
             goods.description = description
-            goods.price = price
+            goods.price = rub_to_cents(price)
             goods.category_id = category_id
 
             if new_name != old_name:

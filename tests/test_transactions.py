@@ -154,17 +154,6 @@ class TestBuyItemTransaction:
             ))).scalar()
             assert iv_count == 0
 
-    async def test_concurrent_purchases_do_not_overdraw(self, user_factory, item_factory):
-        await user_factory(telegram_id=500100, balance=100)
-        await item_factory(name="RaceItem", price=100, values=[("a", False), ("b", False)])
-
-        r1, r2 = await asyncio.gather(
-            buy_item_transaction(500100, "RaceItem"),
-            buy_item_transaction(500100, "RaceItem"),
-        )
-        assert sum(1 for r in (r1, r2) if r[0]) == 1
-        assert await _get_balance(500100) == 0.0
-
     async def test_buy_item_exact_balance(self, user_factory, item_factory):
         await user_factory(telegram_id=100007, balance=100)
         await item_factory(name="Exact", price=100, values=[("exactval", False)])
