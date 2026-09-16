@@ -82,6 +82,8 @@ class TestAnyPaymentMethodEnabled:
             env.CRYPTO_PAY_TOKEN = crypto
             env.STARS_PER_VALUE = stars
             env.TELEGRAM_PROVIDER_TOKEN = provider
+            env.PLATEGA_MERCHANT_ID = ""
+            env.PLATEGA_SECRET = ""
             assert _any_payment_method_enabled() is expected
 
 

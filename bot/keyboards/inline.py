@@ -215,7 +215,7 @@ def payment_menu(pay_url: str) -> InlineKeyboardMarkup:
 
 def get_payment_choice() -> InlineKeyboardMarkup:
     """
-    Select a payment method.
+    Select a payment method (legacy env-only buttons).
     """
     return simple_buttons(
         [
@@ -226,6 +226,13 @@ def get_payment_choice() -> InlineKeyboardMarkup:
         ],
         per_row=1,
     )
+
+
+def payment_choice_from_instruments(instruments) -> InlineKeyboardMarkup:
+    """Build payment method keyboard from DB instruments (ТЗ-04)."""
+    rows = [(inst.title, f"pay_inst_{inst.code}") for inst in instruments]
+    rows.append((localize("btn.back"), "replenish_balance"))
+    return simple_buttons(rows, per_row=1)
 
 
 def question_buttons(question: str, back_data: str) -> InlineKeyboardMarkup:
