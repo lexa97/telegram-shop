@@ -189,8 +189,12 @@ class BoughtGoods(Database.BASE):
     bought_datetime: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
     unique_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
+    order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('orders.id', ondelete="SET NULL"), nullable=True, index=True)
     user_telegram_id: Mapped[Optional["User"]] = relationship(
         "User", back_populates="user_goods", lazy='raise')
+    order: Mapped[Optional["Order"]] = relationship(
+        "Order", back_populates="bought_goods", lazy='raise')
 
     __table_args__ = (
         Index('ix_bought_goods_datetime', 'bought_datetime'),
