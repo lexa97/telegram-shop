@@ -43,12 +43,18 @@ else
     echo "==> PostgreSQL already running"
 fi
 
-# Ensure application role and database exist.
+# Ensure application role and database exist. The role is created as a SUPERUSER
+# to mirror the official Postgres Docker image (where POSTGRES_USER is a
+# superuser): the app sets the superuser-only "lc_messages" server parameter on
+# every connection, so a plain LOGIN role would be rejected.
 if ! psql -h "$PGHOST_SOCK" -p "$PGPORT" -U postgres -tAc \
         "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
     echo "==> Creating role $DB_USER"
     psql -h "$PGHOST_SOCK" -p "$PGPORT" -U postgres -c \
-        "CREATE ROLE \"$DB_USER\" LOGIN PASSWORD '$DB_PASS'"
+        "CREATE ROLE \"$DB_USER\" LOGIN SUPERUSER PASSWORD '$DB_PASS'"
+else
+    psql -h "$PGHOST_SOCK" -p "$PGPORT" -U postgres -c \
+        "ALTER ROLE \"$DB_USER\" LOGIN SUPERUSER PASSWORD '$DB_PASS'" >/dev/null
 fi
 
 if ! psql -h "$PGHOST_SOCK" -p "$PGPORT" -U postgres -tAc \
