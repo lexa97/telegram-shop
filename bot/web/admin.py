@@ -83,6 +83,7 @@ from bot.database.models.main import (
     BoughtGoods, Operations, Payments, ReferralEarnings,
     AuditLog, PromoCodes, CartItems, Reviews, promo_scope_for,
 )
+from bot.database.models.fulfillment_providers import FulfillmentProvider, GoodsProviderLink
 from bot.misc.metrics import get_metrics
 from bot.misc.caching import get_cache_manager
 from bot.database.methods.read import (
@@ -417,6 +418,41 @@ class OperationsAdmin(ModelView, model=Operations):
     icon = "fa-solid fa-money-bill-transfer"
 
 
+class FulfillmentProviderAdmin(ModelView, model=FulfillmentProvider):
+    column_list = [
+        FulfillmentProvider.id,
+        FulfillmentProvider.code,
+        FulfillmentProvider.name,
+        FulfillmentProvider.enabled,
+        FulfillmentProvider.default_timeout_seconds,
+        FulfillmentProvider.default_retry_count,
+    ]
+    column_searchable_list = [FulfillmentProvider.code, FulfillmentProvider.name]
+    form_widget_args = {"config_json": {"rows": 8}}
+    name = "Fulfillment Provider"
+    name_plural = "Fulfillment Providers"
+
+
+class GoodsProviderLinkAdmin(ModelView, model=GoodsProviderLink):
+    column_list = [
+        GoodsProviderLink.id,
+        GoodsProviderLink.goods_id,
+        GoodsProviderLink.provider_id,
+        GoodsProviderLink.external_product_id,
+        GoodsProviderLink.cost_cents,
+        GoodsProviderLink.priority,
+        GoodsProviderLink.enabled,
+    ]
+    column_searchable_list = [GoodsProviderLink.external_product_id]
+    form_widget_args = {
+        "request_params": {"rows": 4},
+        "result_mapping": {"rows": 4},
+        "delivery_template": {"rows": 3},
+    }
+    name = "Goods Provider Link"
+    name_plural = "Goods Provider Links"
+
+
 class PaymentsAdmin(ModelView, model=Payments):
     column_list = [Payments.id, Payments.provider, Payments.external_id, Payments.user_id,
                    Payments.amount, Payments.currency, Payments.status, Payments.created_at]
@@ -740,6 +776,8 @@ def create_admin_app(bot: Any = None) -> Starlette:
     admin.add_view(RoleAdmin)
     admin.add_view(CategoryAdmin)
     admin.add_view(GoodsAdmin)
+    admin.add_view(FulfillmentProviderAdmin)
+    admin.add_view(GoodsProviderLinkAdmin)
     admin.add_view(ItemValuesAdmin)
     admin.add_view(BoughtGoodsAdmin)
     admin.add_view(OperationsAdmin)
