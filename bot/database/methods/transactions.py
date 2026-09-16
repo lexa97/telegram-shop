@@ -17,6 +17,12 @@ from bot.database.methods.read import (
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.pricing import effective_price, apply_promo_discount
 from bot.database.methods.audit import log_audit
+from bot.catalog.stock import (
+    StockAllocationError,
+    assert_gift_purchase_allowed,
+    consume_stock_units,
+    count_finite_available_units,
+)
 
 # Canonical promo error code (from promo_rule_error) -> user-facing key per call site.
 _BUY_PROMO_ERRORS = {
@@ -55,8 +61,13 @@ def _split_amount(total_cents: int, n: int) -> list[int]:
     return [base + (1 if i < extra else 0) for i in range(n)]
 
 
-async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str = None) -> tuple[
-    bool, str, dict | None]:
+async def buy_item_transaction(
+    telegram_id: int,
+    item_name: str,
+    promo_code: str = None,
+    *,
+    gift_recipient_telegram_id: int | None = None,
+) -> tuple[bool, str, dict | None]:
     """
     Complete transactional purchase of goods with checks and locks.
     Returns: (success, message, purchase_data)
@@ -115,24 +126,13 @@ async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str
                 if user.balance < final_price:
                     raise _Abort("insufficient_funds")
 
-                # 4. Receive and lock the goods for purchase (blocking wait for row lock).
-                # Prefer an infinite value (never consumed) over finite stock
-                # LIMIT 1: only one row is consumed, and without it Postgres locks every stock row of the position for the whole transaction.
-                item_value = (await s.execute(
-                    select(ItemValues).where(ItemValues.item_id == goods.id)
-                    .order_by(ItemValues.is_infinity.desc(), ItemValues.id)
-                    .limit(1)
-                    .with_for_update()
-                )).scalars().first()
+                try:
+                    assert_gift_purchase_allowed(goods, gift_recipient_telegram_id)
+                    delivered_values = await consume_stock_units(s, goods, 1)
+                except StockAllocationError as exc:
+                    raise _Abort(exc.code)
 
-                if not item_value:
-                    raise _Abort("out_of_stock")
-
-                delivered_value = item_value.value
-
-                # 5. If the product is not endless, we remove it
-                if not item_value.is_infinity:
-                    await s.delete(item_value)
+                delivered_value = delivered_values[0]
 
                 # 6. Write off the balance
                 user.balance -= final_price
@@ -376,47 +376,25 @@ async def checkout_cart_transaction(
 
                     qty = ci.quantity
 
-                    # An infinite value satisfies any quantity from a single row and
-                    # is never consumed, so check it first and short-circuit: never
-                    # mix infinite and limited rows to fill one line.
+                    has_inf = bool(
+                        (await s.execute(
+                            select(ItemValues.id)
+                            .where(
+                                ItemValues.item_id == goods.id,
+                                ItemValues.is_infinity.is_(True),
+                            )
+                            .limit(1)
+                        )).first()
+                    )
+                    if not has_inf and await count_finite_available_units(s, goods.id) == 0:
+                        items_to_remove.append(ci.id)
+                        continue
 
-                    # No FOR UPDATE needed — the goods row lock taken above already
-                    # excludes concurrent stock mutation for this position, and
-                    # ix_item_values_item_inf serves this predicate exactly.
-                    inf_value = (await s.execute(
-                        select(ItemValues)
-                        .where(ItemValues.item_id == goods.id, ItemValues.is_infinity.is_(True))
-                        .limit(1)
-                    )).scalars().first()
-
-                    if inf_value:
-                        delivered = [inf_value.value] * qty
-                        values_to_delete = []
-                    else:
-                        # Claim qty rows. Safe under the goods lock: no other checkout
-                        # can be selecting or deleting this position's values, so the
-                        # FOR UPDATE ... LIMIT cannot be re-evaluated short by a peer.
-                        rows = (await s.execute(
-                            select(ItemValues)
-                            .where(ItemValues.item_id == goods.id)
-                            .order_by(ItemValues.id)
-                            .limit(qty)
-                            .with_for_update()
-                        )).scalars().all()
-
-                        if not rows:
-                            # Nothing in stock at all: drop the line, buy the rest.
-                            items_to_remove.append(ci.id)
-                            continue
-
-                        if len(rows) < qty:
-                            # Partial stock. Also catches the admin delete path, which
-                            # does not take the goods lock: a concurrently removed row
-                            # shows up as a short read here rather than a phantom.
-                            raise _Abort("out_of_stock")
-
-                        delivered = [r.value for r in rows]
-                        values_to_delete = rows
+                    try:
+                        delivered = await consume_stock_units(s, goods, qty)
+                    except StockAllocationError as exc:
+                        raise _Abort(exc.code)
+                    values_to_delete = []
 
                     # Sale price is the authoritative base; promo stacks on top.
                     price, _on_sale, _original_price = effective_price(goods)
@@ -636,7 +614,16 @@ async def replace_item_stock_and_meta(
             # 2. Insert the replacement stock. An infinite position holds exactly one row that is never consumed, so only the first value counts.
             to_insert = normalized[:1] if is_infinity else normalized
             for v in to_insert:
-                s.add(ItemValues(item_id=goods.id, value=v, is_infinity=is_infinity))
+                from bot.catalog.enums import StockUnitStatus
+
+                s.add(
+                    ItemValues(
+                        item_id=goods.id,
+                        value=v,
+                        is_infinity=is_infinity,
+                        status=StockUnitStatus.AVAILABLE,
+                    )
+                )
 
             # 3. Update the metadata.
             goods.name = new_name

@@ -316,7 +316,8 @@ class CategoryAdmin(AuditModelView, model=Categories):
 
 
 class GoodsAdmin(AuditModelView, model=Goods):
-    column_list = [Goods.id, Goods.name, Goods.price, Goods.sale_percent,
+    column_list = [Goods.id, Goods.name, Goods.price, Goods.fulfillment_type,
+                   Goods.allows_gift, Goods.sale_percent,
                    Goods.sale_until, Goods.description, Goods.category_id]
     column_searchable_list = [Goods.name]
     column_sortable_list = [Goods.id, Goods.name, Goods.price]
@@ -354,7 +355,10 @@ class GoodsAdmin(AuditModelView, model=Goods):
 
 
 class ItemValuesAdmin(AuditModelView, model=ItemValues):
-    column_list = [ItemValues.id, ItemValues.item_id, ItemValues.value, ItemValues.is_infinity]
+    column_list = [
+        ItemValues.id, ItemValues.item_id, ItemValues.value, ItemValues.is_infinity,
+        ItemValues.status, ItemValues.reserved_order_id,
+    ]
     column_searchable_list = [ItemValues.value]
     column_sortable_list = [ItemValues.id, ItemValues.item_id]
     name = "Stock Item"
