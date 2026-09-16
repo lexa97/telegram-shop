@@ -208,10 +208,13 @@ class UserAdmin(AuditModelView, model=User):
         User.referral_earnings_received, User.referral_earnings_generated,
     ]
     form_overrides = {"balance": DecimalField}
+    form_widget_args = {
+        "balance": {"step": "0.01", "min": "0"},
+    }
     form_args = {
         "balance": {
             "places": 2,
-            "description": "Balance in rubles (e.g. 150.50). Stored as kopecks in the database.",
+            "description": "Balance in rubles with kopecks (e.g. 150.50). Stored as kopecks in the database.",
         },
     }
     name = "User"
@@ -333,13 +336,16 @@ class GoodsAdmin(AuditModelView, model=Goods):
     column_formatters_detail = {Goods.price: _format_money_column}
     form_excluded_columns = [Goods.values]
     form_overrides = {"price": DecimalField}
+    form_widget_args = {
+        "price": {"step": "0.01", "min": "0"},
+    }
     name = "Product"
     name_plural = "Products"
     icon = "fa-solid fa-box"
     form_args = {
         "price": {
             "places": 2,
-            "description": "Price in rubles (e.g. 199.99). Stored as kopecks in the database.",
+            "description": "Price in rubles with kopecks (e.g. 199.99). Stored as integer kopecks in the database.",
         },
         "sale_percent": {
             "description": (

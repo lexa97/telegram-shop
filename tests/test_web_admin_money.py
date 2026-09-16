@@ -15,3 +15,8 @@ class TestWebAdminMoneyHelpers:
         data = {"price": "1000"}
         await GoodsAdmin().on_model_change(data, None, True, None)
         assert data["price"] == rub_to_cents("1000")
+
+    async def test_goods_admin_on_model_change_fractional(self):
+        data = {"price": Decimal("29.99")}
+        await GoodsAdmin().on_model_change(data, None, True, None)
+        assert data["price"] == 2999

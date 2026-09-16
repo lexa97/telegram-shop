@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from html import escape as _esc
 
 from bot.i18n import localize
@@ -5,20 +6,27 @@ from bot.logger_mesh import logger
 from bot.misc import EnvKeys
 from bot.money import format_cents_for_ui
 
-# Numeric(12, 2) leaves 10 integer digits; anything larger is a DB error. Shared by the add and the update flows so they cannot drift.
-MAX_ITEM_PRICE = 99_999_999
+# Max ruble amount for a catalog price (stored as kopecks in DB).
+MAX_ITEM_PRICE_RUB = Decimal("99999999.99")
 
 
-def parse_price(text: str) -> int | None:
-    """Parse an item price from admin input. None if it is not a usable price.
+def parse_price(text: str) -> str | None:
+    """Parse a catalog price in rubles (up to 2 decimal places). None if invalid.
+
+    Returns a normalized decimal string for FSM storage (e.g. ``"199.99"``, ``"100"``).
     """
-    price_text = (text or "").strip()
-    if not (price_text.isascii() and price_text.isdigit()):
+    price_text = (text or "").strip().replace(",", ".")
+    if not price_text or not price_text.replace(".", "", 1).isdigit():
         return None
-    price = int(price_text)
-    if price < 1 or price > MAX_ITEM_PRICE:
+    try:
+        amount = Decimal(price_text)
+    except InvalidOperation:
         return None
-    return price
+    if amount.as_tuple().exponent < -2:
+        return None
+    if amount <= 0 or amount > MAX_ITEM_PRICE_RUB:
+        return None
+    return format(amount, "f")
 
 
 async def _notify_restock_safe(bot, item_name: str) -> None:

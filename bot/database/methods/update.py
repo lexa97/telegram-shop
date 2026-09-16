@@ -24,7 +24,7 @@ async def set_role(telegram_id: int, role: int) -> None:
 async def update_item(item_name: str, new_name: str, description: str, price, category: str) -> tuple[bool, str | None]:
     """Update a Goods record with proper locking.
 
-    ``price`` is in whole rubles from admin input; stored as kopecks.
+    ``price`` is in rubles from admin input (max 2 decimal places); stored as kopecks.
 
     Returns ``(success, error_code)``. The error code is a stable key
     ("position_invalid", "position_exists", "db_error")
