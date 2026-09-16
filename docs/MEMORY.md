@@ -15,6 +15,42 @@
 
 ---
 
+## 2026-09-16 — ТЗ-05: поставщики цифровых товаров (Wizard, fake, links)
+
+**Ветка:** `cursor/fulfillment-providers-tz05-03eb` → `main`
+
+### Сделали
+
+- Пакет `bot/providers/`: протокол `DigitalGoodsProvider`, DTO, ошибки `ProviderRetryableError` / `ProviderFatalError`, маппинг `result_mapping` → ключ выдачи.
+- Адаптеры `FakeProvider` (success / timeout / fatal / идемпотентность по ключу) и `WizardProvider` (REST: `GET /v1/products/{id}`, `POST /v1/orders` с `Idempotency-Key`, `GET /v1/orders/{id}`, cancel).
+- Реестр `build_provider(code, config_json)`; сервис `create_external_order` — один вызов create, повтор по уже сохранённому `provider_external_order_id` + `fulfillment_payload` без второго HTTP.
+- Модели `FulfillmentProvider`, `GoodsProviderLink`; миграция `b5c6d7e8f9a0_fulfillment_providers_tz05.py` (сид `wizard` / `fake`; FK `orders.provider_id` → `fulfillment_providers`).
+- `select_primary_link`, `validate_provider_link` (fake / skip_catalog_validation / get_product).
+- SQLAdmin: `FulfillmentProviderAdmin`, `GoodsProviderLinkAdmin`.
+- Тесты `tests/test_providers_tz05.py`; сид в `tests/conftest` через `fulfillment_seed`.
+
+### Обсуждали
+
+- Публичной доки Wizard в репо нет — зафиксирован условный `base_url` `https://api.wizard.example`, поля ответа `id`, `status`, `delivery.value` (переопределяются `result_mapping` на link/provider).
+- Полный retry-loop и вызов `create_external_order` из воркера — **ТЗ-06** / **ТЗ-12**; здесь один HTTP-запрос и классификация ошибок.
+- Платёжный `Payments.provider` не трогали — fulfillment отдельно от Platega (ТЗ-04).
+
+### Отвергли
+
+- *Повторный create при ретрае через новый in-memory Fake без состояния* — *причина:* на ретрае возвращаем заказ из полей `Order`, если payload уже записан; иначе — `get_order_status` (для stateful провайдеров).
+
+### Проверка
+
+- `pytest tests/test_providers_tz05.py` — 7 passed.
+- `pytest` — 1000 passed; 1 failed — прежний `test_concurrent_purchases_do_not_overdraw` (SQLite).
+- Handlers: нет импортов из `bot/providers`.
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-16 — ТЗ-03: каталог и склад (fulfillment, резерв, gift)
 
 **Ветка:** `cursor/catalog-stock-tz03-03eb` → `main`
