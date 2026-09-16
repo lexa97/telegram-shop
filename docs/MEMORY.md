@@ -15,6 +15,48 @@
 
 ---
 
+## 2026-09-16 — PR #5: окружение Cloud Agent (Python 3.11, Postgres, Redis)
+
+**Ветка:** `cursor/setup-dev-environment-e567` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/5
+
+### Сделали
+
+- `.cursor/Dockerfile` — Ubuntu 24.04 + Python 3.11 (deadsnakes PPA), PostgreSQL 16, Redis, build-инструменты; venv на `/opt/venv`, добавлен в `PATH`.
+- `.cursor/install.sh` — установка `requirements.txt` в venv + генерация dev-`.env` (привязан к встроенным Postgres/Redis); идемпотентно.
+- `.cursor/start.sh` — `initdb`+запуск PostgreSQL и Redis под пользователем `ubuntu` (без root), создание роли/БД, `alembic upgrade head`; идемпотентно.
+- `.cursor/environment.json` — build (Dockerfile) + install + start; терминал `bot` (`python run.py`); проброс порта 9090 (админка). Конфигурация **repo-managed** — действует после мержа без «Save».
+
+### Обсуждали
+
+- Роль Postgres создаётся как **SUPERUSER**: приложение выставляет `lc_messages` (SUSET-параметр) в `connect_args` (`bot/database/main.py`); официальный postgres-образ делает `POSTGRES_USER` суперпользователем — воспроизвели это, иначе `permission denied to set parameter "lc_messages"`.
+- Секреты `TOKEN`/`OWNER_ID` — личные секреты разработчика; `load_dotenv` не перекрывает уже заданные переменные окружения, поэтому реальные секреты из платформы переопределяют плейсхолдеры из dev-`.env`.
+- Логи покупок: нажатие «купить» пишется middleware как `critical_action` (`callback=buy_item`); успешная покупка — `action=purchase`; обычные отказы (нет денег/стока) в аудит не пишутся (только `purchase_error` на непредвиденных и `suspicious_item_name`).
+
+### Отвергли
+
+- *Snapshot-based окружение как источник истины* — *причина:* repo-managed `.cursor/environment.json` воспроизводимее и версионируется с кодом (снапшот использован только для build-теста install/start).
+- *Править код приложения/тестов ради падающего `test_concurrent_purchases_do_not_overdraw`* — *причина:* это ограничение in-memory SQLite (нет `SELECT ... FOR UPDATE`), не баг окружения; реальный Postgres блокировку обеспечивает.
+
+### Проверка
+
+- `bash .cursor/install.sh && bash .cursor/start.sh` (оба идемпотентны, прогнаны дважды).
+- `pytest` → **985 passed, 1 failed** (ожидаемый SQLite row-lock).
+- Веб-админка `http://127.0.0.1:9090/admin` (логин/пароль `admin`/`admin`, loopback), `/health → {"status":"healthy"}`, `/admin/ → 302`.
+- Живой бот: `python run.py` → `@dev89289bot`, активный long-polling (конкурентный `getUpdates` → `409 Conflict`).
+- Draft-build `bld-20260916-143ef07d…` **SUCCEEDED**; свежий Cloud Agent из билда прошёл start.sh, миграции, тесты, `/health`.
+
+### Заметки для агентов
+
+- Запуск живого бота требует секретов `TOKEN` (от @BotFather) и `OWNER_ID` — добавляются в раздел **Secrets**.
+- Runtime-логи `logs/bot.log`, `logs/audit.log` — в `.gitignore` (`*.log`) и эфемерны для VM; для передачи фактов будущим агентам используем этот журнал (`docs/MEMORY.md`), а не файлы логов.
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-15 — ТЗ-02: домен заказов (жизненный цикл, snapshot)
 
 **Ветка:** `cursor/orders-domain-54d7` → `main`  
