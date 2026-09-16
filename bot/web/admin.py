@@ -15,11 +15,12 @@ from starlette.routing import Route
 from sqlalchemy import text
 
 from markupsafe import Markup, escape
-from wtforms import SelectField
+from wtforms import SelectField, DecimalField
 from wtforms.validators import Optional as WtfOptional
 from sqlalchemy import select as sa_select
 
 from bot.misc import EnvKeys
+from bot.money import rub_to_cents, format_cents_for_ui, cents_to_float_rub
 from bot.database.methods.audit import log_audit
 
 logger = logging.getLogger(__name__)
@@ -180,19 +181,45 @@ class AuditModelView(ModelView):
 
 
 # Model Views
+def _format_user_balance(model: Any, _name: str) -> str:
+    return format_cents_for_ui(int(getattr(model, "balance", 0) or 0))
+
+
 class UserAdmin(AuditModelView, model=User):
     column_list = [User.telegram_id, User.balance, User.role_id, User.referral_id,
                    User.registration_date, User.is_blocked]
     column_searchable_list = [User.telegram_id]
     column_sortable_list = [User.telegram_id, User.balance, User.registration_date]
     column_default_sort = (User.registration_date, True)
+    column_formatters = {User.balance: _format_user_balance}
+    column_formatters_detail = {User.balance: _format_user_balance}
     form_excluded_columns = [
         User.user_operations, User.user_goods,
         User.referral_earnings_received, User.referral_earnings_generated,
     ]
+    form_overrides = {"balance": DecimalField}
+    form_args = {
+        "balance": {
+            "places": 2,
+            "description": "Balance in rubles (e.g. 150.50). Stored as kopecks in the database.",
+        },
+    }
     name = "User"
     name_plural = "Users"
     icon = "fa-solid fa-users"
+
+    async def get_object_for_edit(self, value: Any) -> Any:
+        obj = await super().get_object_for_edit(value)
+        if obj is not None and obj.balance is not None:
+            obj.balance = cents_to_float_rub(int(obj.balance))
+        return obj
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        raw_balance = data.get("balance")
+        if raw_balance is not None and raw_balance != "":
+            data["balance"] = rub_to_cents(Decimal(str(raw_balance)))
 
     async def _invalidate(self, model: Any, *, blocked: bool | None = None) -> None:
         # A web edit of balance/role_id/is_blocked would otherwise be served stale

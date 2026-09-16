@@ -2,7 +2,9 @@ import pytest
 from unittest.mock import patch
 from aiogram.enums.chat_type import ChatType
 
-from bot.database.methods.read import check_user, select_max_role_id
+from bot.database.methods.read import check_user, select_max_role_id, invalidate_user_cache
+from bot.money import rub_to_cents
+from bot.handlers.admin.user_management import process_replenish_user_balance
 from bot.database.models import Permission
 from bot.handlers.user.main import (
     start, rules_callback_handler, profile_callback_handler,
@@ -107,8 +109,31 @@ class TestProfileHandler:
             await profile_callback_handler(call, fsm_context)
 
         call.message.edit_text.assert_called_once()
-        text = call.message.edit_text.call_args[0][0]
-        assert "500" in str(text)
+        text = str(call.message.edit_text.call_args[0][0])
+        assert "500" in text
+        assert "50000" not in text
+
+    async def test_profile_after_admin_topup_shows_rubles(
+        self, make_callback_query, make_message, fsm_context, user_factory,
+    ):
+        user_id = 300051
+        await user_factory(telegram_id=user_id, balance=0)
+        await fsm_context.update_data(target_user=user_id)
+        msg = make_message(text="100", user_id=900051)
+        await process_replenish_user_balance(msg, fsm_context)
+        await invalidate_user_cache(user_id)
+
+        call = make_callback_query(data="profile", user_id=user_id)
+        with patch("bot.handlers.user.main.EnvKeys") as env:
+            env.PAY_CURRENCY = "RUB"
+            env.REFERRAL_PERCENT = 0
+            await profile_callback_handler(call, fsm_context)
+
+        text = str(call.message.edit_text.call_args[0][0])
+        assert "100" in text
+        assert "10000" not in text
+        user = await check_user(user_id)
+        assert user["balance"] == rub_to_cents("100")
 
 
 class TestRulesHandler:
