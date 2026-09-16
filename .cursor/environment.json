@@ -1,0 +1,20 @@
+{
+  "name": "Telegram Shop Bot",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "bot",
+      "description": "Runs the Telegram bot (polling) + admin panel. Requires a real TOKEN/OWNER_ID in .env; with the placeholder token it prints instructions and drops to a shell.",
+      "command": "cd /workspace && set -a && . ./.env && set +a && if [ \"${TOKEN}\" = \"0000000000:DEV_PLACEHOLDER_TOKEN_REPLACE_ME\" ]; then echo 'TOKEN is a placeholder — set a real Telegram bot TOKEN and OWNER_ID in .env, then run: python run.py'; exec bash; else exec python run.py; fi"
+    }
+  ],
+  "ports": [
+    { "name": "admin", "port": 9090 }
+  ]
+}
