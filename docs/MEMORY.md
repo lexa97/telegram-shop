@@ -15,6 +15,41 @@
 
 ---
 
+## 2026-09-16 — ТЗ-03: каталог и склад (fulfillment, резерв, gift)
+
+**Ветка:** `cursor/catalog-stock-tz03-03eb` → `main`
+
+### Сделали
+
+- Пакет `bot/catalog/`: `FulfillmentType`, статусы `StockUnitStatus`, `consume_stock_units`, `reserve_stock_units`, `release_stock_reservations`, проверка `gift_not_allowed`.
+- Модели: `Goods.fulfillment_type`, `Goods.allows_gift`; `ItemValues.status`, `ItemValues.reserved_order_id` (FK на `orders`).
+- Миграция `f3a4b5c6d7e8_catalog_stock_tz03.py`.
+- Покупка и корзина используют `consume_stock_units` (атомарный delete с `status=AVAILABLE`; на Postgres — `SKIP LOCKED` при выборе).
+- При переходе заказа в `EXPIRED`/`FAILED` — `release_stock_reservations`.
+- Остаток в витрине считает только AVAILABLE (+ infinity).
+- Тесты `tests/test_catalog_stock.py` по критериям ТЗ-03.
+- SQLAdmin: колонки fulfillment / gift / status.
+
+### Обсуждали
+
+- Резерв до оплаты по TTL заказа `CREATED`: API `reserve_stock_units` готов; `buy_item_transaction` по-прежнему мгновенное списание со склада (без заказа) — полный order-flow в ТЗ-06.
+- Подарок: только серверная проверка `gift_recipient_telegram_id` + `allows_gift`; UI — ТЗ-11.
+
+### Отвергли
+
+- *Явный статус SOLD с хранением строки* — *причина:* сохранили прежнее удаление finite-ключа при продаже; RESERVED только для TTL-резерва.
+
+### Проверка
+
+- `pytest tests/test_catalog_stock.py` — все зелёные.
+- `pytest` — 993 passed; 1 failed — прежний `test_concurrent_purchases_do_not_overdraw` на SQLite (гонка баланса без `FOR UPDATE`).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-16 — PR #5: окружение Cloud Agent (Python 3.11, Postgres, Redis)
 
 **Ветка:** `cursor/setup-dev-environment-e567` → `main`  

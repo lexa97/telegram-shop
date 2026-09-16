@@ -2,6 +2,7 @@ from typing import Any
 from sqlalchemy import func, select, or_
 from sqlalchemy import desc
 from bot.database import Database
+from bot.catalog.stock import stock_unit_available_clause as _stock_available
 from bot.database.models import (
     Categories, Goods, User, BoughtGoods, ItemValues,
     ReferralEarnings, Operations
@@ -150,7 +151,8 @@ async def query_items_in_position(item_name: str, offset: int = 0, limit: int = 
                 if not item_id:
                     return 0
                 return (await s.execute(
-                    select(func.count(ItemValues.id)).where(ItemValues.item_id == item_id)
+                    select(func.count(ItemValues.id))
+                    .where(ItemValues.item_id == item_id, _stock_available())
                 )).scalar() or 0
         return await _cached_count(f"count:stock:{item_name}", _count)
 
