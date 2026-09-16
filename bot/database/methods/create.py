@@ -8,6 +8,7 @@ from bot.database.models.main import PromoCodes, CartItems, Reviews, StockSubscr
 from bot.database import Database
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.read import invalidate_stats_cache, invalidate_item_cache, invalidate_category_cache
+from bot.catalog.enums import StockUnitStatus
 from bot.money import rub_to_cents
 
 # Cart limits: distinct positions per cart, and units of any one position.
@@ -36,7 +37,15 @@ async def create_user(telegram_id: int, registration_date: datetime, referral_id
             await s.rollback()
 
 
-async def create_item(item_name: str, item_description: str, item_price: int, category_name: str) -> None:
+async def create_item(
+    item_name: str,
+    item_description: str,
+    item_price: int,
+    category_name: str,
+    *,
+    fulfillment_type: str = "STOCK",
+    allows_gift: bool = False,
+) -> None:
     """Insert item (goods); commit. ``item_price`` is whole rubles from admin; stored as kopecks."""
     price_cents = rub_to_cents(item_price)
     async with Database().session() as s:
@@ -52,6 +61,8 @@ async def create_item(item_name: str, item_description: str, item_price: int, ca
                 description=item_description,
                 price=price_cents,
                 category_id=cat,
+                fulfillment_type=fulfillment_type,
+                allows_gift=allows_gift,
             )
         )
 
@@ -81,7 +92,14 @@ async def add_values_to_item(item_name: str, value: str, is_infinity: bool) -> b
             if dup:
                 return False
 
-            s.add(ItemValues(item_id=item_id, value=value_norm, is_infinity=bool(is_infinity)))
+            s.add(
+                ItemValues(
+                    item_id=item_id,
+                    value=value_norm,
+                    is_infinity=bool(is_infinity),
+                    status=StockUnitStatus.AVAILABLE,
+                )
+            )
     except IntegrityError:
         return False
 
@@ -150,7 +168,12 @@ async def add_values_bulk(
                 await s.execute(
                     sa_insert(ItemValues),
                     [
-                        {"item_id": item_id, "value": v, "is_infinity": bool(is_infinity)}
+                        {
+                            "item_id": item_id,
+                            "value": v,
+                            "is_infinity": bool(is_infinity),
+                            "status": StockUnitStatus.AVAILABLE,
+                        }
                         for v in to_insert
                     ],
                 )

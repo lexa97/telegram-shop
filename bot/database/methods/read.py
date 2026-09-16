@@ -263,12 +263,14 @@ async def get_item_name_by_id(item_id: int) -> str | None:
 
 
 async def select_item_values_amount(item_name: str) -> int:
-    """Return count of item_values for an item (by item name)."""
+    """Return count of sellable stock units for an item (AVAILABLE finite + any infinite row)."""
+    from bot.catalog.stock import stock_unit_available_clause
+
     async with Database().session() as s:
         return (await s.execute(
             select(func.count(ItemValues.id))
             .join(Goods, Goods.id == ItemValues.item_id)
-            .where(Goods.name == item_name)
+            .where(Goods.name == item_name, stock_unit_available_clause())
         )).scalar() or 0
 
 

@@ -107,6 +107,10 @@ async def transition_order(
         raise OrderTransitionError(f"illegal:{from_status}->{to_status}")
 
     order.status = to_status
+    if to_status in (OrderStatus.EXPIRED, OrderStatus.FAILED):
+        from bot.catalog.stock import release_stock_reservations
+
+        await release_stock_reservations(session, order.id)
     if to_status == OrderStatus.COMPLETED:
         order.profit_cents = compute_profit_cents(
             order.total_cents,

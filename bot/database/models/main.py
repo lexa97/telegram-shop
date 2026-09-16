@@ -150,6 +150,9 @@ class Goods(Database.BASE):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('categories.id', ondelete="CASCADE"), nullable=False, index=True)
+    fulfillment_type: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="STOCK", default="STOCK")
+    allows_gift: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
     sale_percent: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
     sale_until: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     category: Mapped["Categories"] = relationship("Categories", back_populates="items", lazy='raise')
@@ -167,11 +170,16 @@ class ItemValues(Database.BASE):
         Integer, ForeignKey('goods.id', ondelete="CASCADE"), nullable=False, index=True)
     value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_infinity: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="AVAILABLE", default="AVAILABLE")
+    reserved_order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('orders.id', ondelete="SET NULL"), nullable=True, index=True)
     item: Mapped["Goods"] = relationship("Goods", back_populates="values", lazy='raise')
 
     __table_args__ = (
         UniqueConstraint('item_id', 'value', name='uq_item_value_per_item'),
         Index('ix_item_values_item_inf', 'item_id', 'is_infinity'),
+        Index('ix_item_values_item_status', 'item_id', 'status'),
     )
 
     def __str__(self):
