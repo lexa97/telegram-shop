@@ -312,6 +312,9 @@ class ReferralEarnings(Database.BASE):
         BigInteger, ForeignKey('users.telegram_id', ondelete="CASCADE"), nullable=False, index=True)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     original_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, unique=True, index=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -373,6 +376,8 @@ class PromoCodes(Database.BASE):
     discount_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default='global')
     max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 = unlimited
+    max_uses_per_user: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    min_order_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     current_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(
@@ -416,9 +421,11 @@ class PromoCodeUsages(Database.BASE):
         Integer, ForeignKey('promo_codes.id', ondelete='CASCADE'), nullable=False)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)
+    order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('orders.id', ondelete='SET NULL'), nullable=True, index=True
+    )
     used_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
-    __table_args__ = (UniqueConstraint('promo_id', 'user_id', name='uq_promo_usage_per_user'),)
 
 
 class CartItems(Database.BASE):

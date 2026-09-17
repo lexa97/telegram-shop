@@ -6,11 +6,11 @@ _checkout_lock = asyncio.Lock()
 
 from bot.money import cents_to_float_rub, rub_to_cents
 
-from sqlalchemy import select, exists, delete as sa_delete, update as sa_update
+from sqlalchemy import select, delete as sa_delete, update as sa_update
 from sqlalchemy.exc import IntegrityError, OperationalError, DBAPIError
 
 from bot.database.models import User, ItemValues, Goods, Categories, BoughtGoods, Payments, Operations
-from bot.database.models.main import PromoCodes, PromoCodeUsages, CartItems, ReferralEarnings
+from bot.database.models.main import PromoCodes, CartItems
 from bot.database import Database
 from bot.misc import EnvKeys
 from bot.database.methods.read import (
@@ -45,6 +45,7 @@ _BUY_PROMO_ERRORS = {
     "already_used": "promo_already_used",
     "wrong_item": "promo_wrong_item",
     "wrong_category": "promo_wrong_category",
+    "min_order": "promo_min_order",
 }
 _REDEEM_PROMO_ERRORS = {
     "not_found": "promo.not_found",
@@ -105,18 +106,24 @@ async def buy_item_transaction(
                     final_price = price
                     discount_info = None
 
+                    applied_promo = None
                     if promo_code:
                         promo = (await s.execute(
                             select(PromoCodes).where(PromoCodes.code == promo_code.upper()).with_for_update()
                         )).scalars().first()
-                        err = await promo_rule_error(s, promo, telegram_id, goods=goods)
+                        err = await promo_rule_error(
+                            s,
+                            promo,
+                            telegram_id,
+                            goods=goods,
+                            order_total_cents=price,
+                        )
                         if err:
                             raise _Abort(_BUY_PROMO_ERRORS[err])
                         final_price = apply_promo_discount(
                             price, promo.discount_type, promo.discount_value, 1
                         )
-                        promo.current_uses += 1
-                        s.add(PromoCodeUsages(promo_id=promo.id, user_id=telegram_id))
+                        applied_promo = promo
                         discount_info = {
                             "code": promo.code,
                             "original_price": cents_to_float_rub(price),
@@ -167,6 +174,19 @@ async def buy_item_transaction(
                         raise _Abort(exc.code)
                     except StockAllocationError as exc:
                         raise _Abort(exc.code)
+
+                    if applied_promo is not None:
+                        from bot.database.methods.promo_usage import (
+                            PromoUsageLimitError,
+                            record_promo_usage,
+                        )
+
+                        try:
+                            await record_promo_usage(
+                                s, applied_promo, telegram_id, order_id=order.id
+                            )
+                        except PromoUsageLimitError as exc:
+                            raise _Abort(_BUY_PROMO_ERRORS[exc.code])
 
                     result_data = purchase_result_from_order(
                         order, goods, bought_rows, user.balance, discount_info
@@ -263,36 +283,8 @@ async def process_payment_with_referral(
             )
             s.add(operation)
 
-            # 4. Process the referral bonus
-            clamped_percent = min(max(referral_percent, 0), 99)
-            if clamped_percent > 0 and user.referral_id and user.referral_id != user_id:
-                referral_amount = (amount * clamped_percent) // 100
-
-                if referral_amount > 0:
-                    referrer = (await s.execute(
-                        select(User).where(User.telegram_id == user.referral_id).with_for_update()
-                    )).scalars().one_or_none()
-
-                    if referrer:
-                        referrer.balance += referral_amount
-                        await log_audit(
-                            "referral_bonus",
-                            user_id=user.referral_id,
-                            resource_type="User",
-                            resource_id=str(user_id),
-                            details=f"paid={amount}, bonus={referral_amount}",
-                            session=s,
-                        )
-
-                        earning = ReferralEarnings(
-                            referrer_id=user.referral_id,
-                            referral_id=user_id,
-                            amount=referral_amount,
-                            original_amount=amount
-                        )
-                        s.add(earning)
-
-            referrer_id = user.referral_id if clamped_percent > 0 else None
+            # Referral on top-up removed (ТЗ-07): rewards on Order.COMPLETED only.
+            referrer_id = None
 
     except _Abort as e:
         return False, e.code
@@ -313,9 +305,6 @@ async def process_payment_with_referral(
 
     safe_create_task(invalidate_user_cache(user_id))
     safe_create_task(invalidate_stats_cache())
-    if referrer_id:
-        safe_create_task(invalidate_user_cache(referrer_id))
-
     return True, "success"
 
 
@@ -376,8 +365,8 @@ async def checkout_cart_transaction(
                 # code -> promo row, fetched and locked once per checkout even when
                 # the same code sits on several cart lines.
                 promos_by_code: dict[str, PromoCodes | None] = {}
-                # promo id -> "this user has already redeemed it", resolved once.
-                promo_used: dict[int, bool] = {}
+                # promo id -> how many times this user has redeemed it (one lookup per promo).
+                promo_usage_count: dict[int, int] = {}
 
                 for ci in cart_items:
                     goods = goods_by_id.get(ci.item_id)
@@ -423,16 +412,27 @@ async def checkout_cart_transaction(
                             )).scalars().first()
                         candidate = promos_by_code[code]
                         if candidate is not None:
-                            if candidate.id not in promo_used:
-                                promo_used[candidate.id] = bool((await s.execute(
-                                    select(exists().where(
-                                        PromoCodeUsages.promo_id == candidate.id,
-                                        PromoCodeUsages.user_id == user_id,
-                                    ))
-                                )).scalar())
+                            if candidate.id not in promo_usage_count:
+                                from bot.database.methods.promo_usage import (
+                                    count_promo_usages_for_user,
+                                )
+
+                                promo_usage_count[candidate.id] = (
+                                    await count_promo_usages_for_user(
+                                        s, candidate.id, user_id
+                                    )
+                                )
+                            max_per_user = int(
+                                getattr(candidate, "max_uses_per_user", 1) or 1
+                            )
+                            used_up = promo_usage_count[candidate.id] >= max_per_user
                             if not await promo_rule_error(
-                                s, candidate, user_id, goods=goods,
-                                used=promo_used[candidate.id],
+                                s,
+                                candidate,
+                                user_id,
+                                goods=goods,
+                                used=used_up,
+                                order_total_cents=line_price,
                             ):
                                 promo = candidate
 
@@ -515,9 +515,16 @@ async def checkout_cart_transaction(
                             })
 
                     # 6. Record promo usage (once per distinct promo)
+                    from bot.database.methods.promo_usage import (
+                        PromoUsageLimitError,
+                        record_promo_usage,
+                    )
+
                     for promo in promos_to_record.values():
-                        promo.current_uses += 1
-                        s.add(PromoCodeUsages(promo_id=promo.id, user_id=user_id))
+                        try:
+                            await record_promo_usage(s, promo, user_id)
+                        except PromoUsageLimitError:
+                            raise _Abort("transaction_error")
 
                     # 7. Deduct total
                     user.balance -= total_price
@@ -744,8 +751,15 @@ async def redeem_balance_promo(code: str, user_id: int) -> tuple[bool, str, int 
 
             amount = int(promo.discount_value)
             user.balance += amount
-            promo.current_uses += 1
-            s.add(PromoCodeUsages(promo_id=promo.id, user_id=user_id))
+            from bot.database.methods.promo_usage import (
+                PromoUsageLimitError,
+                record_promo_usage,
+            )
+
+            try:
+                await record_promo_usage(s, promo, user_id)
+            except PromoUsageLimitError as exc:
+                raise _Abort(_REDEEM_PROMO_ERRORS[exc.code])
             s.add(Operations(
                 user_id=user_id,
                 operation_value=amount,

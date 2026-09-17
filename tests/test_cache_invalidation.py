@@ -383,7 +383,8 @@ class TestCacheInvalidationAfterMutations:
         await asyncio.sleep(0)
 
         assert success is True
-        assert f"user:{referrer_id}" not in fake_cache.store
+        # Referral bonus is on completed orders only — top-up does not touch referrer cache.
+        assert f"user:{referrer_id}" in fake_cache.store
 
 
 class TestWebPanelStockEdits:
