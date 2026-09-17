@@ -15,17 +15,37 @@
 
 ---
 
+## 2026-09-17 — PR #14: ТЗ-09 — тикеты поддержки
+
+**Ветка:** `cursor/support-tickets-tz09-03eb` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/14
+
+### Сделали
+
+- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3` после merge с ТЗ-08 в `main`).
+- `TICKETS_MANAGE` = 1<<11 в матрице ТЗ-08; OPERATOR уже имеет тикеты в `insert_roles()`.
+- User/admin handlers, SQLAdmin list views; `tests/test_support_tz09.py`.
+
+### Проверка
+
+- `pytest tests/test_support_tz09.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
 
-**Ветка:** `cursor/rbac-tz08-03eb` → `main` (поверх ТЗ-07 в `main`, PR #12)
+**Ветка:** смержено в `main` (PR #13)
 
 ### Сделали
 
 - Новые биты: `ORDERS_MANAGE`, `TICKETS_MANAGE`, `PROVIDERS_MANAGE`, `PAYMENTS_CONFIG`, `AUDIT_VIEW`; `Permission.all_bits()`.
-- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN (без `ADMINS_MANAGE`/`OWN`), SUPERADMIN (все биты); rename `OWNER` → `SUPERADMIN`.
-- Миграция `d8e9f0a1b2c3` (revises `c7d8e9f0a1b2`); `bot/database/role_names.py`; защита SUPERADMIN в assign/block.
-- Консоль бота: shop-меню для `STATS_VIEW` без каталога (OPERATOR); audit `order_refund` в `manual_refund_order`.
-- Тесты `tests/test_rbac_tz08.py`, обновлены role/admin tests.
+- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN, SUPERADMIN; rename `OWNER` → `SUPERADMIN`.
+- Миграция `d8e9f0a1b2c3`; `bot/database/role_names.py`; тесты `tests/test_rbac_tz08.py`.
 
 ### Матрица (биты)
 
@@ -37,18 +57,9 @@
 | ADMIN | USE, BROADCAST, SETTINGS, USERS, CATALOG, STATS, BALANCE, PROMOS, ORDERS, PROVIDERS, PAYMENTS |
 | SUPERADMIN | все биты включая ADMINS, OWN, AUDIT |
 
-### Обсуждали
-
-- SQLAdmin по-прежнему на env-логин/пароль; in-chat меню режется по битам Telegram-роли.
-
-### Отвергли
-
-- *Casbin / внешний IAM* — *причина:* ТЗ-08.
-
 ### Проверка
 
 - `pytest tests/test_rbac_tz08.py tests/test_role_management.py`
-- `pytest`
 
 ### Graphify
 

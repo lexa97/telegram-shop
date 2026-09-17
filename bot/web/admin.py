@@ -85,6 +85,7 @@ from bot.database.models.main import (
 )
 from bot.database.models.fulfillment_providers import FulfillmentProvider, GoodsProviderLink
 from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
+from bot.database.models.support import SupportMessage, SupportTicket
 from bot.misc.metrics import get_metrics
 from bot.misc.caching import get_cache_manager
 from bot.database.methods.read import (
@@ -760,6 +761,40 @@ async def prometheus_metrics(request: Request) -> PlainTextResponse:
     return PlainTextResponse(metrics.export_to_prometheus(), media_type="text/plain")
 
 
+class SupportTicketAdmin(ModelView, model=SupportTicket):
+    column_list = [
+        SupportTicket.id,
+        SupportTicket.user_id,
+        SupportTicket.status,
+        SupportTicket.linked_order_id,
+        SupportTicket.updated_at,
+    ]
+    column_sortable_list = [SupportTicket.id, SupportTicket.updated_at]
+    name = "Support Ticket"
+    name_plural = "Support Tickets"
+    icon = "fa-solid fa-life-ring"
+
+
+class SupportMessageAdmin(ModelView, model=SupportMessage):
+    column_list = [
+        SupportMessage.id,
+        SupportMessage.ticket_id,
+        SupportMessage.author_role,
+        SupportMessage.author_user_id,
+        SupportMessage.created_at,
+    ]
+    column_sortable_list = [SupportMessage.id, SupportMessage.created_at]
+    form_columns = [
+        SupportMessage.ticket_id,
+        SupportMessage.author_role,
+        SupportMessage.author_user_id,
+        SupportMessage.body,
+    ]
+    name = "Support Message"
+    name_plural = "Support Messages"
+    icon = "fa-solid fa-comment-dots"
+
+
 async def metrics_json(request: Request) -> JSONResponse:
     if not request.session.get("authenticated"):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -824,6 +859,8 @@ def create_admin_app(bot: Any = None) -> Starlette:
     admin.add_view(AuditLogAdmin)
     admin.add_view(PromoCodeAdmin)
     admin.add_view(CartItemsAdmin)
+    admin.add_view(SupportTicketAdmin)
+    admin.add_view(SupportMessageAdmin)
     if EnvKeys.REVIEWS_ENABLED == "1":
         admin.add_view(ReviewsAdmin)
 
