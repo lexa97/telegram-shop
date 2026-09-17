@@ -15,6 +15,40 @@
 
 ---
 
+## 2026-09-16 — ТЗ-04: платежи, инструменты, Platega
+
+**Ветка:** `cursor/payments-platega-tz04-03eb` → `main`
+
+### Сделали
+
+- Модели `PaymentGateway`, `PaymentInstrument`; `Payments.internal_uuid`.
+- Миграция `a4b5c6d7e8f9` + сид «Карта / МИР» → Platega (ключи из env).
+- `bot/payments/`: `process_payment_topup` (без реферала), адаптер Platega (`create_payment`, `fetch_status`, webhook headers), `create_topup_via_instrument`, список инструментов из БД.
+- Webhook `POST /webhooks/platega` на Starlette (рядом с админкой).
+- Handlers: клавиатура методов из БД (`pay_inst_{code}`), ветка Platega + проверка оплаты; CryptoPay manual check → `process_payment_topup`.
+- Recovery: pending `platega` опрашивается `fetch_status`.
+- SQLAdmin: gateways/instruments; тесты `tests/test_platega_payments.py`.
+
+### Обсуждали
+
+- Stars/Telegram fiat остаются через gateway-код в handler (инструменты в БД, логика прежняя).
+- Heleket — gateway disabled, без API в v1.
+
+### Отвергли
+
+- *Реферал с пополнения в ТЗ-04* — *причина:* `process_payment_topup` без referral; реферал с заказа — ТЗ-07.
+
+### Проверка
+
+- `pytest tests/test_platega_payments.py`
+- `alembic upgrade head`; env: `PLATEGA_MERCHANT_ID`, `PLATEGA_SECRET`; callback URL в ЛК Platega → `https://<host>/webhooks/platega`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-16 — ТЗ-03: каталог и склад (fulfillment, резерв, gift)
 
 **Ветка:** `cursor/catalog-stock-tz03-03eb` → `main`

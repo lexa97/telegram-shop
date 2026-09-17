@@ -114,6 +114,8 @@ def setup_test_database():
             await conn.run_sync(Database.BASE.metadata.create_all)
         from bot.database.models.main import Role
         await Role.insert_roles()
+        from bot.database.methods.payment_config import seed_default_payment_config
+        await seed_default_payment_config()
 
     asyncio.run(_setup())
 
@@ -129,6 +131,9 @@ async def db_cleanup(setup_test_database):
     Clean all data between tests by deleting rows from all tables
     (except roles which are session-scoped).
     """
+    from bot.database.methods.payment_config import seed_default_payment_config
+    await seed_default_payment_config()
+
     yield
 
     from bot.database.main import Database
@@ -153,6 +158,9 @@ async def db_cleanup(setup_test_database):
         await s.execute(delete(BoughtGoods))
         await s.execute(delete(Order))
         await s.execute(delete(Operations))
+        from bot.database.models.payment_config import PaymentInstrument, PaymentGateway
+        await s.execute(delete(PaymentInstrument))
+        await s.execute(delete(PaymentGateway))
         await s.execute(delete(Payments))
         await s.execute(delete(ItemValues))
         await s.execute(delete(Goods))

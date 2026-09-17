@@ -211,17 +211,28 @@ async def create_category(category_name: str) -> None:
     safe_create_task(invalidate_category_cache(category_name))
 
 
-async def create_pending_payment(provider: str, external_id: str, user_id: int, amount: int, currency: str) -> None:
+async def create_pending_payment(
+    provider: str,
+    external_id: str,
+    user_id: int,
+    amount: int,
+    currency: str,
+    *,
+    internal_uuid: str | None = None,
+) -> None:
     """Create pending payment."""
     async with Database().session() as s:
-        s.add(Payments(
-            provider=provider,
-            external_id=external_id,
-            user_id=user_id,
-            amount=int(amount),
-            currency=currency,
-            status="pending"
-        ))
+        s.add(
+            Payments(
+                provider=provider,
+                external_id=external_id,
+                user_id=user_id,
+                amount=int(amount),
+                currency=currency,
+                status="pending",
+                internal_uuid=internal_uuid,
+            )
+        )
 
 
 async def create_role(name: str, permissions: int) -> int | None:
