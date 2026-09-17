@@ -15,6 +15,38 @@
 
 ---
 
+## 2026-09-17 — Каркас интеграционных тестов (сценарии → pytest)
+
+**Ветка:** `cursor/integration-tests-scaffold-987a` → `main`
+
+### Сделали
+
+- `docs/testing/` — README workflow, `integration-scenarios.md` (реестр + шаблон сценариев INT-xxx).
+- `tests/integration/` — `conftest.py` с маркером `integration`, README для разработчиков.
+- `pytest.ini` — регистрация маркера `integration`.
+- Корневой README и `docs/README.md` — ссылки на раздел.
+
+### Обсуждали
+
+- Реальный Telegram / webhook E2E не нужен для цели «логика»; интеграция = mock Bot API + цепочки шагов, как в существующем `tests/conftest.py`.
+- Сценарии пишет заказчик/команда в markdown; код переносится по статусу `ready` → `done`.
+
+### Отвергли
+
+- *Отдельный CI job только для integration* — *причина:* пока нет тестов; полный `pytest` включает каталог, при необходимости позже `-m "not integration"`.
+- *Обязательный placeholder-тест* — *причina:* пустой каталог нормален до появления сценариев.
+
+### Проверка
+
+- `pytest` — полный suite без регрессий.
+- `pytest tests/integration/` — 0 tests (ожидаемо до первых сценариев).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-16 — ТЗ-05: поставщики цифровых товаров (Wizard, fake, links)
 
 **Ветка:** `cursor/fulfillment-providers-tz05-03eb` → `main`
