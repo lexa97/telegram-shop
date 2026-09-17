@@ -205,10 +205,15 @@ _PERM_LABELS = {
     Permission.USERS_MANAGE: "USERS",
     Permission.CATALOG_MANAGE: "CATALOG",
     Permission.ADMINS_MANAGE: "ADMINS",
-    Permission.OWN: "OWNER",
+    Permission.OWN: "OWN",
     Permission.STATS_VIEW: "STATS",
     Permission.BALANCE_MANAGE: "BALANCE",
     Permission.PROMO_MANAGE: "PROMOS",
+    Permission.ORDERS_MANAGE: "ORDERS",
+    Permission.TICKETS_MANAGE: "TICKETS",
+    Permission.PROVIDERS_MANAGE: "PROVIDERS",
+    Permission.PAYMENTS_CONFIG: "PAYMENTS",
+    Permission.AUDIT_VIEW: "AUDIT",
 }
 
 

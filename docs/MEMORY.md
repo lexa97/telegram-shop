@@ -15,9 +15,50 @@
 
 ---
 
+## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
+
+**Ветка:** `cursor/rbac-tz08-03eb` → `main` (поверх ТЗ-07 в `main`, PR #12)
+
+### Сделали
+
+- Новые биты: `ORDERS_MANAGE`, `TICKETS_MANAGE`, `PROVIDERS_MANAGE`, `PAYMENTS_CONFIG`, `AUDIT_VIEW`; `Permission.all_bits()`.
+- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN (без `ADMINS_MANAGE`/`OWN`), SUPERADMIN (все биты); rename `OWNER` → `SUPERADMIN`.
+- Миграция `d8e9f0a1b2c3` (revises `c7d8e9f0a1b2`); `bot/database/role_names.py`; защита SUPERADMIN в assign/block.
+- Консоль бота: shop-меню для `STATS_VIEW` без каталога (OPERATOR); audit `order_refund` в `manual_refund_order`.
+- Тесты `tests/test_rbac_tz08.py`, обновлены role/admin tests.
+
+### Матрица (биты)
+
+| Роль | Назначение |
+|------|------------|
+| USER | USE |
+| OPERATOR | USE, USERS, ORDERS, TICKETS, STATS |
+| MANAGER | USE, CATALOG, PROMOS, PROVIDERS, STATS |
+| ADMIN | USE, BROADCAST, SETTINGS, USERS, CATALOG, STATS, BALANCE, PROMOS, ORDERS, PROVIDERS, PAYMENTS |
+| SUPERADMIN | все биты включая ADMINS, OWN, AUDIT |
+
+### Обсуждали
+
+- SQLAdmin по-прежнему на env-логин/пароль; in-chat меню режется по битам Telegram-роли.
+
+### Отвергли
+
+- *Casbin / внешний IAM* — *причина:* ТЗ-08.
+
+### Проверка
+
+- `pytest tests/test_rbac_tz08.py tests/test_role_management.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-07: промокоды и реферал на заказах
 
-**Ветка:** `cursor/promo-referral-tz07-03eb` → `main` (rebase/merge поверх ТЗ-06 в `main`, PR #10)
+**Ветка:** смержено в `main` (PR #12)
 
 ### Сделали
 
