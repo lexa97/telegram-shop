@@ -88,6 +88,7 @@ from bot.database.models.orders import Order
 from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
 from bot.web.admin_helpers import (
     format_order_money,
+    format_gateway_code,
     mask_gateway_config,
     run_manual_refund,
     validate_json_text,
@@ -493,8 +494,15 @@ class PaymentGatewayAdmin(AuditModelView, model=PaymentGateway):
         PaymentGateway.created_at,
     ]
     column_searchable_list = [PaymentGateway.code]
-    column_formatters = {PaymentGateway.config_json: mask_gateway_config}
-    column_formatters_detail = {PaymentGateway.config_json: mask_gateway_config}
+    column_formatters = {
+        PaymentGateway.code: format_gateway_code,
+        PaymentGateway.config_json: mask_gateway_config,
+    }
+    column_formatters_detail = {
+        PaymentGateway.code: format_gateway_code,
+        PaymentGateway.config_json: mask_gateway_config,
+    }
+    form_widget_args = {"config_json": {"rows": 16}}
     form_excluded_columns = (
         [PaymentGateway.config_json] if EnvKeys.admin_panel_operator_mode() else []
     )

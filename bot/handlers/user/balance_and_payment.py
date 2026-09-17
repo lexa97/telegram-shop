@@ -22,6 +22,12 @@ from bot.payments.service import (
     list_enabled_instruments,
 )
 from bot.payments.gateways.platega import fetch_status as platega_fetch_status, gateway_config_from_json
+from bot.payments.gateway_settings import (
+    cryptopay_api_token,
+    gateway_is_configured,
+    stars_per_value,
+    telegram_provider_token,
+)
 from bot.misc.metrics import get_metrics
 from bot.misc.services import CryptoPayAPI, CryptoPayAPIError, send_stars_invoice, send_fiat_invoice
 from bot.misc.services.payment import _minor_units_for, payload_amount
@@ -152,7 +158,11 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
         await call.answer(localize("payments.not_configured"), show_alert=True)
         return
 
-    gateway_code = instrument.gateway.code
+    gateway = instrument.gateway
+    gateway_code = gateway.code
+    if not gateway_is_configured(gateway):
+        await call.answer(localize("payments.not_configured"), show_alert=True)
+        return
 
     try:
         amount_dec = Decimal(amount_cents) / Decimal(100)
@@ -199,12 +209,8 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
             return
 
         if gateway_code == "cryptopay":
-            if not EnvKeys.CRYPTO_PAY_TOKEN:
-                await call.answer(localize("payments.not_configured"), show_alert=True)
-                return
-
             try:
-                crypto = CryptoPayAPI()
+                crypto = CryptoPayAPI(cryptopay_api_token(gateway))
                 invoice = await crypto.create_invoice(
                     amount=float(amount_dec),
                     expires_in=ttl_seconds,
@@ -244,12 +250,14 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
             )
 
         elif gateway_code == "stars":
-            if EnvKeys.STARS_PER_VALUE > 0:
+            rate = stars_per_value(gateway)
+            if rate > 0:
                 try:
                     await send_stars_invoice(
                         bot=call.message.bot,
                         chat_id=call.from_user.id,
                         amount=int(amount_dec),
+                        stars_per_value=rate,
                     )
                 except Exception as e:
                     await log_audit("stars_invoice_fail", level="ERROR", user_id=call.from_user.id, resource_type="Payment", details=str(e))
@@ -261,7 +269,8 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                 return
 
         elif gateway_code == "telegram_fiat":
-            if not EnvKeys.TELEGRAM_PROVIDER_TOKEN:
+            provider_token = telegram_provider_token(gateway)
+            if not provider_token:
                 await call.answer(localize("payments.not_configured"), show_alert=True)
                 return
 
@@ -270,6 +279,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                     bot=call.message.bot,
                     chat_id=call.from_user.id,
                     amount=int(amount_dec),
+                    provider_token=provider_token,
                 )
             except Exception as e:
                 await log_audit("fiat_invoice_fail", level="ERROR", user_id=call.from_user.id, resource_type="Payment", details=str(e))
@@ -304,7 +314,13 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
             return
 
         try:
-            crypto = CryptoPayAPI()
+            inst = await get_instrument_by_code("cryptopay")
+            gw = inst.gateway if inst else None
+            token = cryptopay_api_token(gw) if gw else None
+            if not token:
+                await call.answer(localize("payments.not_configured"), show_alert=True)
+                return
+            crypto = CryptoPayAPI(token)
             info = await crypto.get_invoice(invoice_id)
         except CryptoPayAPIError as e:
             await log_audit("cryptopay_check_error", level="ERROR", user_id=user_id, resource_type="Payment", details=f"[{e.code}] {e.name}")

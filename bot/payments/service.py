@@ -12,6 +12,7 @@ from bot.database.methods.create import create_pending_payment
 from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
 from bot.payments.credit import process_payment_topup
 from bot.payments.gateways import platega as platega_gw
+from bot.payments.gateway_settings import gateway_is_configured
 from bot.payments.types import CreatedPayment
 
 
@@ -30,7 +31,7 @@ async def list_enabled_instruments() -> list[PaymentInstrument]:
                 .order_by(PaymentInstrument.sort_order, PaymentInstrument.id)
             )
         ).scalars().all()
-        return list(rows)
+        return [r for r in rows if gateway_is_configured(r.gateway)]
 
 
 async def get_instrument_by_code(code: str) -> Optional[PaymentInstrument]:

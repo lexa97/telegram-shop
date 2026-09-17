@@ -272,20 +272,19 @@ are **required**; everything else has a sensible default.
 |-----------------------------|---------------------------------------------------------------------------|----------------|
 | `TOKEN`                     | Bot token from [@BotFather](https://telegram.me/BotFather)                | **required**   |
 | `OWNER_ID`                  | Your [Telegram ID](https://telegram.me/myidbot) — becomes the first OWNER | **required**   |
-| `TELEGRAM_PROVIDER_TOKEN`   | Token for Telegram Payments (fiat)                                        | –              |
-| `CRYPTO_PAY_TOKEN`          | CryptoPay API token                                                       | –              |
-| `STARS_PER_VALUE`           | Telegram Stars exchange rate (`0` disables Stars)                         | `0.91`         |
 | `PAY_CURRENCY`              | Display currency (RUB, USD, EUR…)                                         | `RUB`          |
 | `REFERRAL_PERCENT`          | Referral commission % (0–99)                                              | `0`            |
 | `PAYMENT_TIME`              | Invoice validity, seconds                                                 | `1800`         |
 | `MIN_AMOUNT` / `MAX_AMOUNT` | Allowed top‑up range (display units; stored as kopecks after credit)      | `20` / `10000` |
-| `PLATEGA_MERCHANT_ID` / `PLATEGA_SECRET` | Platega.io credentials (optional; can also live in `payment_gateways`) | –              |
-| `PLATEGA_BASE_URL`          | Platega API base                                                          | `https://app.platega.io` |
 
-**Platega webhook:** configure in the Platega dashboard a `POST` URL on your **admin panel**
-host, path **`/webhooks/platega`** (same port as `ADMIN_PORT`, typically `9090` behind HTTPS).
-The request must carry headers `X-MerchantId` and `X-Secret` matching the gateway config.
-Duplicate deliveries are idempotent (`tests/test_platega_payments.py`).
+**Payment gateways (Platega, CryptoPay, Stars, Telegram Payments)** are configured in the web
+admin: **Payment Gateways** (`config_json` credentials) and **Payment Instruments** (what users
+see, sort order, `enabled`). The bot reads only the database, not `PLATEGA_*` / `CRYPTO_PAY_*` env.
+
+**Platega webhook:** in the Platega dashboard set `POST https://<your-domain>/webhooks/platega`
+(admin panel port `ADMIN_PORT`, usually `9090` behind HTTPS). Headers `X-MerchantId` and
+`X-Secret` must match `config_json` on the `platega` gateway row. Idempotent credit is covered
+by tests (`tests/test_platega_payments.py`).
 
 </details>
 
