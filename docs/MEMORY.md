@@ -15,21 +15,68 @@
 
 ---
 
-## 2026-09-17 — PR #14: ТЗ-09 — тикеты поддержки
+## 2026-09-17 — ТЗ-10: SQLAdmin web-панель (§13)
 
-**Ветка:** `cursor/support-tickets-tz09-03eb` → `main`  
-**PR:** https://github.com/lexa97/telegram-shop/pull/14
+**Ветка:** `cursor/admin-panel-tz10-03eb` → `main` (ТЗ-09 уже в `main`, PR #14)
 
 ### Сделали
 
-- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3` после merge с ТЗ-08 в `main`).
-- `TICKETS_MANAGE` = 1<<11 в матрице ТЗ-08; OPERATOR уже имеет тикеты в `insert_roles()`.
-- User/admin handlers, SQLAdmin list views; `tests/test_support_tz09.py`.
+- Заказы: `OrderAdmin` (read-only), action **Refund** → `manual_refund_order` + audit.
+- Статистика: `SalesStatsView` — revenue/profit по `profit_cents` для `COMPLETED`.
+- Склад: `StockImportView` → `add_values_bulk`, отчёт added/skipped.
+- Тикеты: расширение SQLAdmin — edit status, `SupportReplyView` → `staff_reply` + Telegram notify.
+- Поставщики: `AuditModelView`, JSON-валидация `config_json` / `request_params` / `result_mapping`.
+- Платежи: gateway secrets masked; `ADMIN_PANEL_OPERATOR=1` скрывает `config_json` в форме.
+- `ADMIN_WEB_OPERATOR_ID` для audit web-действий.
+
+### Чеклист §13 (экран / view)
+
+| Пункт | View |
+|-------|------|
+| Пользователи, баланс | `UserAdmin` |
+| Товары, категории | `GoodsAdmin`, `CategoryAdmin` |
+| Склад + массовая загрузка | `ItemValuesAdmin`, `StockImportView` |
+| API-поставщики, связи | `FulfillmentProviderAdmin`, `GoodsProviderLinkAdmin` |
+| Заказы | `OrderAdmin` |
+| Платежи | `PaymentsAdmin` |
+| Промо, рефералы | `PromoCodeAdmin`, `ReferralEarningsAdmin` |
+| Обращения | `SupportTicketAdmin`, `SupportMessageAdmin`, `SupportReplyView` |
+| Статистика | `SalesStatsView` |
+| Роли | `RoleAdmin` |
+| Аудит | `AuditLogAdmin` |
+| Инструменты/шлюзы | `PaymentInstrumentAdmin`, `PaymentGatewayAdmin` |
+
+### Обсуждали
+
+- SQLAdmin остаётся на env-логин; «OPERATOR без секретов» — через `ADMIN_PANEL_OPERATOR`, не через Telegram-роль в сессии.
+
+### Отвергли
+
+- *Отдельный SPA админки* — *причина:* ТЗ-10.
+
+### Проверка
+
+- `pytest tests/test_admin_panel_tz10.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-09: тикеты поддержки
+
+**Ветка:** смержено в `main` (PR #14)
+
+### Сделали
+
+- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3`).
+- User/admin handlers, базовые SQLAdmin list views; `tests/test_support_tz09.py`.
 
 ### Проверка
 
 - `pytest tests/test_support_tz09.py`
-- `pytest`
 
 ### Graphify
 
