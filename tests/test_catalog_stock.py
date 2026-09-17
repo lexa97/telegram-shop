@@ -135,7 +135,7 @@ class TestCatalogStockTz03:
 
         ok, msg, _ = await buy_item_transaction(604001, "ApiGood")
         assert ok is False
-        assert msg == "api_fulfillment"
+        assert msg == "no_provider_link"
 
     async def test_gift_not_allowed_when_flag_false(self, user_factory, item_factory):
         await user_factory(telegram_id=605001, balance=5000)
