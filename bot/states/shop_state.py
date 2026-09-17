@@ -10,3 +10,4 @@ class ShopStates(StatesGroup):
     viewing_categories = State()
     waiting_search_query = State()
     viewing_search_results = State()
+    waiting_gift_recipient = State()

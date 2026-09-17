@@ -15,6 +15,40 @@
 
 ---
 
+## 2026-09-17 — ТЗ-11: UX бота (каталог, покупка, заказы)
+
+**Ветка:** `cursor/bot-ux-tz11-03eb` → `main`
+
+### Сделали
+
+- Карточка товара: тип выдачи STOCK/API, флаг подарка, цена в ₽ (как раньше через `format_cents_for_ui`).
+- Покупка: подтверждение (`buy_item` → `buy_confirm`); подарок — FSM `waiting_gift_recipient`, проверка регистрации получателя в `buy_item_transaction`.
+- История заказов: `query_user_orders`, handlers `my_orders` / `order_od:`, статусы без сырого ключа до `COMPLETED`.
+- Недостаточный баланс: кнопка пополнения; API-заказ — сообщение «обрабатывается» без ключа.
+- Пополнение: без изменений логики — `list_enabled_instruments()` уже в `replenish_balance_amount`.
+- Тикеты/support: уже из ТЗ-09.
+- `bot/handlers/user/purchase_ui.py` — тонкий слой над `buy_item_transaction`.
+- Тесты: `tests/test_bot_ux_tz11.py`, обновлены payment/shop handler tests.
+
+### Обсуждали
+
+- Подарок только по числовому Telegram ID (username в БД не хранится).
+
+### Отвергли
+
+- *Прямая покупка без confirm одной кнопкой* — *причина:* ТЗ-11 требует подтверждение.
+
+### Проверка
+
+- `pytest tests/test_bot_ux_tz11.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-10: SQLAdmin web-панель (§13)
 
 **Ветка:** `cursor/admin-panel-tz10-03eb` → `main` (ТЗ-09 уже в `main`, PR #14)
