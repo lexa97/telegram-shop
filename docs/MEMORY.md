@@ -17,13 +17,13 @@
 
 ## 2026-09-17 — ТЗ-07: промокоды и реферал на заказах
 
-**Ветка:** `cursor/promo-referral-tz07-03eb` → `main` (база включает ТЗ-06 до merge #10)
+**Ветка:** `cursor/promo-referral-tz07-03eb` → `main` (rebase/merge поверх ТЗ-06 в `main`, PR #10)
 
 ### Сделали
 
 - Миграция `c7d8e9f0a1b2`: `min_order_cents`, `max_uses_per_user`, `promo_code_usages.order_id`, снят `uq_promo_usage_per_user`, unique `referral_earnings.order_id`.
 - `promo_rule_error` / `record_promo_usage` / `count_promo_usages_for_user`; повторная проверка лимитов под lock промо.
-- Корзина и redeem через `record_promo_usage`; buy_item — usage с `order_id`.
+- Корзина и redeem через `record_promo_usage`; buy_item — usage с `order_id` после создания заказа (ТЗ-06).
 - Реферал: `credit_referral_for_order` / `reverse_referral_for_order` на `Order.COMPLETED` / `REFUNDED`; убрано с top-up в `process_payment_with_referral`.
 - i18n: тексты «с покупок», не «с пополнений»; SQLAdmin поля промо; тесты `tests/test_promo_referral_tz07.py`.
 
@@ -34,6 +34,7 @@
 ### Отвергли
 
 - *Реферал с пополнения* — *причина:* ТЗ-07, начисление только с завершённого заказа.
+- *Ранний increment промо в buy_item (как до ТЗ-06 в main)* — *причина:* usage должен идти с `order_id` после `begin_paid_order`.
 
 ### Проверка
 
