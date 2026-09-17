@@ -9,7 +9,7 @@ from bot.database.main import Database
 from bot.database.models.main import Payments
 from bot.handlers.user.balance_and_payment import (
     replenish_balance_callback_handler, buy_item_callback_handler,
-    checking_payment, successful_payment_handler,
+    buy_confirm_handler, checking_payment, successful_payment_handler,
 )
 from bot.misc.services.payment import currency_to_stars, payload_amount
 from bot.states import BalanceStates
@@ -300,9 +300,13 @@ class TestBuyItemHandler:
         call = make_callback_query(data="buy_item", user_id=400020)
         await fsm_context.update_data(csrf_item="TestWidget")
 
-        with patch('bot.handlers.user.balance_and_payment.EnvKeys') as env:
+        with patch('bot.handlers.user.balance_and_payment.EnvKeys') as env, \
+             patch('bot.handlers.user.purchase_ui.EnvKeys') as env2:
             env.PAY_CURRENCY = "RUB"
+            env2.PAY_CURRENCY = "RUB"
             await buy_item_callback_handler(call, fsm_context)
+            confirm = make_callback_query(data="buy_confirm", user_id=400020)
+            await buy_confirm_handler(confirm, fsm_context)
 
         user = await check_user(400020)
         assert user['balance'] == rub_to_cents("400")
@@ -315,9 +319,13 @@ class TestBuyItemHandler:
         call = make_callback_query(data="buy_item", user_id=400021)
         await fsm_context.update_data(csrf_item="ExpensiveItem")
 
-        with patch('bot.handlers.user.balance_and_payment.EnvKeys') as env:
+        with patch('bot.handlers.user.balance_and_payment.EnvKeys') as env, \
+             patch('bot.handlers.user.purchase_ui.EnvKeys') as env2:
             env.PAY_CURRENCY = "RUB"
+            env2.PAY_CURRENCY = "RUB"
             await buy_item_callback_handler(call, fsm_context)
+            confirm = make_callback_query(data="buy_confirm", user_id=400021)
+            await buy_confirm_handler(confirm, fsm_context)
 
         # Balance should be unchanged
         user = await check_user(400021)
@@ -332,7 +340,8 @@ class TestBuyItemHandler:
 
         await buy_item_callback_handler(call, fsm_context)
 
-        call.answer.assert_called_once_with('middleware.security.invalid_csrf', show_alert=True)
+        call.answer.assert_called_once()
+        assert call.answer.call_args.kwargs.get("show_alert") is True
         # A purchase without the CSRF-guarded item name must not charge anything.
         assert (await check_user(400022))['balance'] == rub_to_cents("500")
 

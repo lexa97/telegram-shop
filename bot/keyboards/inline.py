@@ -35,6 +35,7 @@ def profile_keyboard(referral_percent: int, user_items: int = 0, cart_count: int
         kb.button(text=localize("btn.purchased"), callback_data="bought_items")
     cart_text = localize("btn.cart", count=cart_count) if cart_count > 0 else localize("btn.cart_empty")
     kb.button(text=cart_text, callback_data="cart")
+    kb.button(text=localize("btn.my_orders"), callback_data="my_orders")
     kb.button(text=localize("btn.operation_history"), callback_data="operation_history")
     kb.button(text=localize("btn.redeem_promo"), callback_data="redeem_promo")
     kb.button(text=localize("btn.back"), callback_data="back_to_menu")
@@ -144,6 +145,7 @@ def item_info(
         review_count: int = 0, has_purchased: bool = False,
         applied_promo: str = None, reviews_enabled: bool = True,
         out_of_stock: bool = False, subscribed: bool = False,
+        allows_gift: bool = False,
 ) -> InlineKeyboardMarkup:
     """
     Product card with buy, cart, promo, review buttons.
@@ -153,6 +155,8 @@ def item_info(
     """
     kb = InlineKeyboardBuilder()
     kb.button(text=localize("btn.buy"), callback_data="buy_item")
+    if allows_gift and not out_of_stock:
+        kb.button(text=localize("btn.buy_gift"), callback_data="buy_gift")
     kb.button(text=localize("btn.add_to_cart"), callback_data="add_to_cart")
     if applied_promo:
         kb.button(text=localize("btn.remove_promo"), callback_data="remove_promo")

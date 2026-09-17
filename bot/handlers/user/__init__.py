@@ -4,6 +4,7 @@ from .shop_and_goods import router as shop_and_goods_router
 from .referral_system import router as referral_system_router
 from .cart import router as cart_router
 from .support import router as support_router
+from .orders import router as orders_router
 
 from aiogram import Router
 
@@ -14,3 +15,4 @@ router.include_router(shop_and_goods_router)
 router.include_router(referral_system_router)
 router.include_router(cart_router)
 router.include_router(support_router)
+router.include_router(orders_router)
