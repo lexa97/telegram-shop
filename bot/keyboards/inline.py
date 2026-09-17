@@ -14,8 +14,7 @@ def main_menu(role: int, channel: str | None = None, helper: str | None = None) 
     kb.button(text=localize("btn.shop"), callback_data="shop")
     kb.button(text=localize("btn.rules"), callback_data="rules")
     kb.button(text=localize("btn.profile"), callback_data="profile")
-    if helper:
-        kb.button(text=localize("btn.support"), url=f"tg://user?id={helper}")
+    kb.button(text=localize("btn.support"), callback_data="support")
     if channel:
         kb.button(text=localize("btn.channel"), url=f"https://t.me/{channel.lstrip('@')}")
     if Permission.has_any_admin_perm(role):
@@ -54,6 +53,8 @@ def admin_console_keyboard(maintenance_mode: bool = False, role: int = 127) -> I
         kb.button(text=localize("admin.menu.categories"), callback_data="categories_management")
     if role & Permission.PROMO_MANAGE:
         kb.button(text=localize("admin.menu.promo"), callback_data="promo_mgmt")
+    if role & Permission.TICKETS_MANAGE:
+        kb.button(text=localize("admin.menu.support"), callback_data="support_tickets")
     if role & Permission.USERS_MANAGE:
         kb.button(text=localize("admin.menu.users"), callback_data="user_management")
     if role & Permission.ADMINS_MANAGE:

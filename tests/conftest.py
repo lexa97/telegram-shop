@@ -109,7 +109,8 @@ def setup_test_database():
     db = Database()
 
     async def _setup():
-        import bot.database.models  # noqa: F401 — register Order tables on metadata
+        import bot.database.models  # noqa: F401 — register ORM tables on metadata
+        import bot.database.models.support  # noqa: F401
         async with db.engine.begin() as conn:
             await conn.run_sync(Database.BASE.metadata.create_all)
         from bot.database.models.main import Role
@@ -148,10 +149,13 @@ async def db_cleanup(setup_test_database):
         StockSubscriptions,
     )
     from bot.database.models.orders import OrderStatusHistory, Order
+    from bot.database.models.support import SupportMessage, SupportTicket
 
     db = Database()
     async with db.session() as s:
         # Delete in FK order.
+        await s.execute(delete(SupportMessage))
+        await s.execute(delete(SupportTicket))
         await s.execute(delete(Reviews))
         await s.execute(delete(StockSubscriptions))
         await s.execute(delete(CartItems))

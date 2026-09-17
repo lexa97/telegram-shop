@@ -21,6 +21,20 @@ class Permission:
     STATS_VIEW      = 1 << 7   # 128 — statistics, logs, bought-item search
     BALANCE_MANAGE  = 1 << 8   # 256 — top-up / deduct user balance
     PROMO_MANAGE    = 1 << 9   # 512 — promo code CRUD
+    TICKETS_MANAGE  = 1 << 10  # 1024 — support tickets (ТЗ-09)
+
+    _ALL_BITS = (
+        USE, BROADCAST, SETTINGS_MANAGE, USERS_MANAGE, CATALOG_MANAGE,
+        ADMINS_MANAGE, OWN, STATS_VIEW, BALANCE_MANAGE, PROMO_MANAGE,
+        TICKETS_MANAGE,
+    )
+
+    @staticmethod
+    def all_bits() -> int:
+        mask = 0
+        for bit in Permission._ALL_BITS:
+            mask |= bit
+        return mask
 
     @staticmethod
     def is_subset(perms: int, of: int) -> bool:
@@ -56,12 +70,14 @@ class Role(Database.BASE):
             'ADMIN': [Permission.USE, Permission.BROADCAST,
                       Permission.SETTINGS_MANAGE, Permission.USERS_MANAGE,
                       Permission.CATALOG_MANAGE, Permission.STATS_VIEW,
-                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE],
+                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE,
+                      Permission.TICKETS_MANAGE],
             'OWNER': [Permission.USE, Permission.BROADCAST,
                       Permission.SETTINGS_MANAGE, Permission.USERS_MANAGE,
                       Permission.CATALOG_MANAGE, Permission.ADMINS_MANAGE,
                       Permission.OWN, Permission.STATS_VIEW,
-                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE],
+                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE,
+                      Permission.TICKETS_MANAGE],
         }
         default_role = 'USER'
         async with Database().session() as s:
