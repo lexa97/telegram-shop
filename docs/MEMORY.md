@@ -15,6 +15,38 @@
 
 ---
 
+## 2026-09-17 — ТЗ-12: фоновые воркеры (fulfillment, expire, hung)
+
+**Ветка:** `cursor/workers-tz12-03eb` → `main`
+
+### Сделали
+
+- `FulfillmentWorker` в `bot/misc/services/fulfillment_worker.py`: периодический poll PROCESSING API-заказов, `expire_due_created_orders`, fail hung PROCESSING (`FULFILLMENT_HUNG_SECONDS`), уведомление покупателя с `delivery_notified_at`.
+- Миграция `f2a3b4c5d6e8`: поля `fulfillment_attempt_count`, `processing_started_at`, `delivery_notified_at` на `orders`.
+- `fulfill_processing_order`: учёт max retry по link/provider → FAILED/REFUNDED.
+- `transition_order`: проставляет `processing_started_at` при входе в PROCESSING.
+- Подключение в `bot/main.py` (start/stop рядом с Recovery/Cleanup).
+- Тесты: `tests/test_workers_tz12.py`.
+
+### Обсуждали
+
+- HTTP по-прежнему внутри одной DB-сессии в `fulfill_processing_order` (handler не await'ит — `safe_create_task`); полный split транзакции — отдельный рефакторинг.
+
+### Отвергли
+
+- *Экспорт `FulfillmentWorker` из `bot.misc.services.__init__`* — *причина:* циклический импорт с `bot.database` при старте Alembic.
+
+### Проверка
+
+- `alembic upgrade head`
+- `pytest tests/test_workers_tz12.py tests/test_fulfillment_tz06.py`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-11: UX бота (каталог, покупка, заказы)
 
 **Ветка:** `cursor/bot-ux-tz11-03eb` → `main`
