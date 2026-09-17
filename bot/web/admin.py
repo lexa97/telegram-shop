@@ -548,13 +548,15 @@ def _format_promo_scope_html(model, name):
 class PromoCodeAdmin(AuditModelView, model=PromoCodes):
     column_list = [PromoCodes.id, PromoCodes.code, PromoCodes.discount_type,
                    PromoCodes.discount_value, PromoCodes.scope, PromoCodes.category_id,
-                   PromoCodes.item_id, PromoCodes.max_uses, PromoCodes.current_uses,
+                   PromoCodes.item_id, PromoCodes.max_uses, PromoCodes.max_uses_per_user,
+                   PromoCodes.min_order_cents, PromoCodes.current_uses,
                    PromoCodes.is_active, PromoCodes.expires_at, PromoCodes.created_at]
     column_searchable_list = [PromoCodes.code]
     column_sortable_list = [PromoCodes.id, PromoCodes.code, PromoCodes.created_at]
     column_default_sort = (PromoCodes.id, True)
     form_columns = [PromoCodes.code, PromoCodes.discount_type, PromoCodes.discount_value,
-                    PromoCodes.scope, PromoCodes.max_uses, PromoCodes.expires_at, PromoCodes.is_active]
+                    PromoCodes.scope, PromoCodes.max_uses, PromoCodes.max_uses_per_user,
+                    PromoCodes.min_order_cents, PromoCodes.expires_at, PromoCodes.is_active]
     form_overrides = {"discount_type": SelectField, "scope": SelectField}
     form_args = {
         "discount_type": {

@@ -615,6 +615,7 @@ async def buy_item_callback_handler(call: CallbackQuery, state: FSMContext):
                 "promo_expired": "promo.expired",
                 "promo_max_uses": "promo.max_uses_reached",
                 "promo_already_used": "promo.already_used",
+                "promo_min_order": "promo.min_order",
                 "promo_wrong_item": "promo.wrong_item",
                 "promo_wrong_category": "promo.wrong_category",
             }
