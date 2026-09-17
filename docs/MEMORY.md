@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-09-17 — ТЗ-06: checkout и fulfillment (заказ, баланс, STOCK/API)
+
+**Ветка:** `cursor/fulfillment-worker-tz06-03eb` → `main`
+
+### Сделали
+
+- `bot/misc/services/fulfillment.py`: `begin_paid_order`, `complete_stock_order`, `fulfill_processing_order`, auto-refund `FAILED`→`REFUNDED`, gift → `BoughtGoods.buyer_id` получателя.
+- `buy_item_transaction`: заказ + списание; STOCK завершается в транзакции (`COMPLETED`); API → `PROCESSING` + фоновый `fulfill_processing_order_by_id` (без долгого await в handler).
+- `select_primary_link_for_session` в `bot/providers/links.py`.
+- Тесты `tests/test_fulfillment_tz06.py`; `_checkout_lock` для SQLite StaticPool при конкурентных покупках.
+
+### Обсуждали
+
+- **Корзина:** одна строка = один `Order` — в этом PR пока только `buy_item`; `checkout_cart_transaction` остаётся на legacy-пути (без Order), без регрессии STOCK.
+- Реферал на `COMPLETED` — ТЗ-07; retry/backoff воркера — ТЗ-12.
+
+### Отвергли
+
+- *Синхронный await Wizard в handler* — *причина:* ТЗ-06/12; API через task после commit.
+
+### Проверка
+
+- `pytest tests/test_fulfillment_tz06.py`
+- `pytest` (полный набор; известный fail `test_concurrent_purchases_do_not_overdraw` на SQLite без lock — смягчён lock для buy_item).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-16 — ТЗ-05: поставщики цифровых товаров (Wizard, fake, links)
 
 **Ветка:** `cursor/fulfillment-providers-tz05-03eb` → `main`

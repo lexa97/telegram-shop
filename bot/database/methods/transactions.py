@@ -1,5 +1,8 @@
+import asyncio
 from datetime import datetime, timezone
 from uuid import uuid4
+
+_checkout_lock = asyncio.Lock()
 
 from bot.money import cents_to_float_rub, rub_to_cents
 
@@ -17,11 +20,19 @@ from bot.database.methods.read import (
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.pricing import effective_price, apply_promo_discount
 from bot.database.methods.audit import log_audit
+from bot.catalog.enums import FulfillmentType
 from bot.catalog.stock import (
     StockAllocationError,
-    assert_gift_purchase_allowed,
     consume_stock_units,
     count_finite_available_units,
+)
+from bot.misc.services.fulfillment import (
+    FulfillmentError,
+    begin_paid_order,
+    fulfill_processing_order_by_id,
+    purchase_api_line,
+    purchase_result_from_order,
+    purchase_stock_line,
 )
 
 # Canonical promo error code (from promo_rule_error) -> user-facing key per call site.
@@ -74,93 +85,92 @@ async def buy_item_transaction(
     """
     max_retries = 3
     for attempt in range(max_retries):
+        api_order_id = None
         try:
-            async with Database().session() as s:
-                # 1. Lock the user to check the balance
-                user = (await s.execute(
-                    select(User).where(User.telegram_id == telegram_id).with_for_update()
-                )).scalars().one_or_none()
+            async with _checkout_lock:
+                async with Database().session() as s:
+                    user = (await s.execute(
+                        select(User).where(User.telegram_id == telegram_id).with_for_update()
+                    )).scalars().one_or_none()
+                    if not user:
+                        raise _Abort("user_not_found")
 
-                if not user:
-                    raise _Abort("user_not_found")
+                    goods = (await s.execute(
+                        select(Goods).where(Goods.name == item_name).with_for_update()
+                    )).scalars().one_or_none()
+                    if not goods:
+                        raise _Abort("item_not_found")
 
-                # 2. Get information about the product
-                goods = (await s.execute(
-                    select(Goods).where(Goods.name == item_name).with_for_update()
-                )).scalars().one_or_none()
+                    price, _on_sale, _original_price = effective_price(goods)
+                    final_price = price
+                    discount_info = None
 
-                if not goods:
-                    raise _Abort("item_not_found")
+                    if promo_code:
+                        promo = (await s.execute(
+                            select(PromoCodes).where(PromoCodes.code == promo_code.upper()).with_for_update()
+                        )).scalars().first()
+                        err = await promo_rule_error(s, promo, telegram_id, goods=goods)
+                        if err:
+                            raise _Abort(_BUY_PROMO_ERRORS[err])
+                        final_price = apply_promo_discount(
+                            price, promo.discount_type, promo.discount_value, 1
+                        )
+                        promo.current_uses += 1
+                        s.add(PromoCodeUsages(promo_id=promo.id, user_id=telegram_id))
+                        discount_info = {
+                            "code": promo.code,
+                            "original_price": cents_to_float_rub(price),
+                            "discount": cents_to_float_rub(price - final_price),
+                        }
 
-                # Sale price (if an active sale exists) is the authoritative base;
-                # a promo code then stacks on top of it. Computed server-side so a client cannot influence the charged amount.
-                price, _on_sale, _original_price = effective_price(goods)
-                final_price = price
-                discount_info = None
+                    discount_cents = price - final_price if promo_code else 0
+                    cost_cents = 0
+                    if goods.fulfillment_type == FulfillmentType.API:
+                        from bot.providers.links import select_primary_link_for_session
 
-                # 2.5. Apply promo code if provided
-                if promo_code:
-                    promo = (await s.execute(
-                        select(PromoCodes).where(PromoCodes.code == promo_code.upper()).with_for_update()
-                    )).scalars().first()
+                        link = await select_primary_link_for_session(s, goods.id)
+                        if not link:
+                            raise _Abort("no_provider_link")
+                        cost_cents = int(link.cost_cents or 0)
 
-                    err = await promo_rule_error(s, promo, telegram_id, goods=goods)
-                    if err:
-                        raise _Abort(_BUY_PROMO_ERRORS[err])
+                    try:
+                        if goods.fulfillment_type == FulfillmentType.API:
+                            order = await begin_paid_order(
+                                s,
+                                user=user,
+                                goods=goods,
+                                quantity=1,
+                                unit_price_cents=price,
+                                discount_cents=discount_cents,
+                                gift_recipient_telegram_id=gift_recipient_telegram_id,
+                                cost_cents=cost_cents,
+                            )
+                            await purchase_api_line(s, order, goods)
+                            bought_rows = []
+                            api_order_id = order.id
+                        else:
+                            delivered_values = await consume_stock_units(s, goods, 1)
+                            order = await begin_paid_order(
+                                s,
+                                user=user,
+                                goods=goods,
+                                quantity=1,
+                                unit_price_cents=price,
+                                discount_cents=discount_cents,
+                                gift_recipient_telegram_id=gift_recipient_telegram_id,
+                                cost_cents=0,
+                            )
+                            bought_rows = await purchase_stock_line(
+                                s, order, goods, 1, delivered_values=delivered_values
+                            )
+                    except FulfillmentError as exc:
+                        raise _Abort(exc.code)
+                    except StockAllocationError as exc:
+                        raise _Abort(exc.code)
 
-                    # Apply discount (clamped: percent in [0,100], result >= 0).
-                    final_price = apply_promo_discount(
-                        price, promo.discount_type, promo.discount_value, 1
+                    result_data = purchase_result_from_order(
+                        order, goods, bought_rows, user.balance, discount_info
                     )
-
-                    # Record usage
-                    promo.current_uses += 1
-                    s.add(PromoCodeUsages(promo_id=promo.id, user_id=telegram_id))
-                    discount_info = {
-                        "code": promo.code,
-                        "original_price": cents_to_float_rub(price),
-                        "discount": cents_to_float_rub(price - final_price),
-                    }
-
-                # 3. Checking the balance
-                if user.balance < final_price:
-                    raise _Abort("insufficient_funds")
-
-                try:
-                    assert_gift_purchase_allowed(goods, gift_recipient_telegram_id)
-                    delivered_values = await consume_stock_units(s, goods, 1)
-                except StockAllocationError as exc:
-                    raise _Abort(exc.code)
-
-                delivered_value = delivered_values[0]
-
-                # 6. Write off the balance
-                user.balance -= final_price
-
-                # 7. Create a purchase record
-                bought_item = BoughtGoods(
-                    item_name=item_name,
-                    value=delivered_value,
-                    price=final_price,
-                    buyer_id=telegram_id,
-                    bought_datetime=datetime.now(timezone.utc),
-                    unique_id=uuid4().int >> 65
-                )
-                s.add(bought_item)
-                await s.flush()
-
-                # Build the result before the session block commits on exit.
-                result_data = {
-                    "item_name": item_name,
-                    "value": delivered_value,
-                    "price": cents_to_float_rub(final_price),
-                    "new_balance": cents_to_float_rub(user.balance),
-                    "unique_id": bought_item.unique_id,
-                    "bought_id": bought_item.id,
-                    "bought_datetime": bought_item.bought_datetime.isoformat(),
-                }
-                if discount_info:
-                    result_data["discount"] = discount_info
 
         except _Abort as e:
             return False, e.code, None
@@ -193,6 +203,8 @@ async def buy_item_transaction(
         safe_create_task(invalidate_user_cache(telegram_id))
         safe_create_task(invalidate_stats_cache())
         safe_create_task(invalidate_item_cache(item_name))
+        if api_order_id is not None:
+            safe_create_task(fulfill_processing_order_by_id(api_order_id))
         return True, "success", result_data
 
     return False, "transaction_error", None
