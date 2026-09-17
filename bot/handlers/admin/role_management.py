@@ -18,6 +18,7 @@ from bot.keyboards import back, close, simple_buttons
 from bot.database.methods.audit import log_audit
 from bot.filters import HasPermissionFilter
 from bot.middleware.security import flush_all_role_caches, invalidate_auth_caches
+from bot.database.role_names import BUILTIN_ROLE_NAMES, is_superadmin_role
 from bot.states import RoleMgmtFSM
 
 router = Router()
@@ -29,10 +30,15 @@ PERM_LABELS = {
     Permission.USERS_MANAGE: "USERS",
     Permission.CATALOG_MANAGE: "CATALOG",
     Permission.ADMINS_MANAGE: "ADMINS",
-    Permission.OWN: "OWNER",
+    Permission.OWN: "OWN",
     Permission.STATS_VIEW: "STATS",
     Permission.BALANCE_MANAGE: "BALANCE",
     Permission.PROMO_MANAGE: "PROMOS",
+    Permission.ORDERS_MANAGE: "ORDERS",
+    Permission.TICKETS_MANAGE: "TICKETS",
+    Permission.PROVIDERS_MANAGE: "PROVIDERS",
+    Permission.PAYMENTS_CONFIG: "PAYMENTS",
+    Permission.AUDIT_VIEW: "AUDIT",
 }
 
 
@@ -101,7 +107,7 @@ async def role_view_handler(call: CallbackQuery):
 
     actions = []
     actions.append((localize('admin.roles.edit'), f"role_e_{role_id}"))
-    if not role['default'] and role['name'] not in ('USER', 'ADMIN', 'OWNER') and user_count == 0:
+    if not role['default'] and role['name'] not in BUILTIN_ROLE_NAMES and user_count == 0:
         actions.append((localize('admin.roles.delete'), f"role_d_{role_id}"))
     actions.append((localize('btn.back'), 'role_mgmt'))
 
@@ -360,7 +366,7 @@ async def assign_role_list(call: CallbackQuery):
         return
 
     target_role_name = await check_role_name_by_id(db_user.get('role_id'))
-    if target_role_name == 'OWNER':
+    if is_superadmin_role(target_role_name):
         await call.answer(localize('admin.users.cannot_change_owner'), show_alert=True)
         return
 
@@ -400,7 +406,7 @@ async def assign_role_confirm(call: CallbackQuery):
         return
 
     target_role_name = await check_role_name_by_id(db_user.get('role_id'))
-    if target_role_name == 'OWNER':
+    if is_superadmin_role(target_role_name):
         await call.answer(localize('admin.users.cannot_change_owner'), show_alert=True)
         return
 

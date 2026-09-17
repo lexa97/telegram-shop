@@ -235,6 +235,17 @@ async def manual_refund_order(
         )
     )
 
+    from bot.database.methods.audit import log_audit
+
+    await log_audit(
+        "order_refund",
+        user_id=operator_id,
+        resource_type="Order",
+        resource_id=str(order.id),
+        details=f"total_cents={order.total_cents}",
+        session=session,
+    )
+
     await transition_order(session, order, OrderStatus.REFUNDED, actor_id=operator_id)
     safe_create_task(invalidate_user_cache(order.user_id))
     return order, True

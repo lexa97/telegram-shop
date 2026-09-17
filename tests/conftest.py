@@ -174,7 +174,9 @@ async def db_cleanup(setup_test_database):
         await s.execute(delete(Categories))
         await s.execute(delete(User))
         # Delete custom roles (keep built-in)
-        await s.execute(delete(Role).where(Role.name.notin_(['USER', 'ADMIN', 'OWNER'])))
+        await s.execute(delete(Role).where(Role.name.notin_(
+            ['USER', 'ADMIN', 'SUPERADMIN', 'OPERATOR', 'MANAGER']
+        )))
 
 
 @pytest.fixture(autouse=True)

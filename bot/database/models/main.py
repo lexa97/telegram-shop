@@ -17,10 +17,30 @@ class Permission:
     USERS_MANAGE    = 1 << 3   #   8 — view/block/unblock users, referrals, purchases
     CATALOG_MANAGE  = 1 << 4   #  16 — categories, positions, items/goods CRUD
     ADMINS_MANAGE   = 1 << 5   #  32 — role CRUD, role assignment
-    OWN             = 1 << 6   #  64 — owner-only operations
+    OWN             = 1 << 6   #  64 — owner-only operations (env OWNER_ID bypass)
     STATS_VIEW      = 1 << 7   # 128 — statistics, logs, bought-item search
     BALANCE_MANAGE  = 1 << 8   # 256 — top-up / deduct user balance
     PROMO_MANAGE    = 1 << 9   # 512 — promo code CRUD
+    ORDERS_MANAGE   = 1 << 10  # 1024 — orders, manual refund, cancel
+    TICKETS_MANAGE  = 1 << 11  # 2048 — support tickets (ТЗ-09)
+    PROVIDERS_MANAGE = 1 << 12  # 4096 — fulfillment providers / links
+    PAYMENTS_CONFIG = 1 << 13  # 8192 — payment gateways & secrets (panel / future bot UI)
+    AUDIT_VIEW      = 1 << 14  # 16384 — audit log access
+
+    _ALL_BITS = (
+        USE, BROADCAST, SETTINGS_MANAGE, USERS_MANAGE, CATALOG_MANAGE,
+        ADMINS_MANAGE, OWN, STATS_VIEW, BALANCE_MANAGE, PROMO_MANAGE,
+        ORDERS_MANAGE, TICKETS_MANAGE, PROVIDERS_MANAGE, PAYMENTS_CONFIG,
+        AUDIT_VIEW,
+    )
+
+    @staticmethod
+    def all_bits() -> int:
+        """Bitmask with every defined permission (SUPERADMIN seed)."""
+        mask = 0
+        for bit in Permission._ALL_BITS:
+            mask |= bit
+        return mask
 
     @staticmethod
     def is_subset(perms: int, of: int) -> bool:
@@ -51,20 +71,45 @@ class Role(Database.BASE):
 
     @staticmethod
     async def insert_roles():
+        """Seed built-in roles (ТЗ-08). Renames legacy OWNER → SUPERADMIN."""
         roles = {
-            'USER': [Permission.USE],
-            'ADMIN': [Permission.USE, Permission.BROADCAST,
-                      Permission.SETTINGS_MANAGE, Permission.USERS_MANAGE,
-                      Permission.CATALOG_MANAGE, Permission.STATS_VIEW,
-                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE],
-            'OWNER': [Permission.USE, Permission.BROADCAST,
-                      Permission.SETTINGS_MANAGE, Permission.USERS_MANAGE,
-                      Permission.CATALOG_MANAGE, Permission.ADMINS_MANAGE,
-                      Permission.OWN, Permission.STATS_VIEW,
-                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE],
+            'USER': [
+                Permission.USE,
+            ],
+            'OPERATOR': [
+                Permission.USE,
+                Permission.USERS_MANAGE,
+                Permission.ORDERS_MANAGE,
+                Permission.TICKETS_MANAGE,
+                Permission.STATS_VIEW,
+            ],
+            'MANAGER': [
+                Permission.USE,
+                Permission.CATALOG_MANAGE,
+                Permission.PROMO_MANAGE,
+                Permission.PROVIDERS_MANAGE,
+                Permission.STATS_VIEW,
+            ],
+            'ADMIN': [
+                Permission.USE,
+                Permission.BROADCAST,
+                Permission.SETTINGS_MANAGE,
+                Permission.USERS_MANAGE,
+                Permission.CATALOG_MANAGE,
+                Permission.STATS_VIEW,
+                Permission.BALANCE_MANAGE,
+                Permission.PROMO_MANAGE,
+                Permission.ORDERS_MANAGE,
+                Permission.PROVIDERS_MANAGE,
+                Permission.PAYMENTS_CONFIG,
+            ],
+            'SUPERADMIN': list(Permission._ALL_BITS),
         }
         default_role = 'USER'
         async with Database().session() as s:
+            legacy = (await s.execute(select(Role).filter_by(name='OWNER'))).scalars().first()
+            if legacy is not None:
+                legacy.name = 'SUPERADMIN'
             for r, perms in roles.items():
                 result = await s.execute(select(Role).filter_by(name=r))
                 role = result.scalars().first()
@@ -435,5 +480,5 @@ class StockSubscriptions(Database.BASE):
 
 
 async def register_models():
-    """Seed the built-in roles (USER/ADMIN/OWNER)."""
+    """Seed the built-in roles (USER/ADMIN/SUPERADMIN/OPERATOR/MANAGER)."""
     await Role.insert_roles()

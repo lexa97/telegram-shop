@@ -98,7 +98,7 @@ async def check_role_name_by_id(role_id: int) -> str:
 
 
 async def select_max_role_id() -> Optional[int]:
-    """Return role_id with the highest numeric permissions value (OWNER=127)."""
+    """Return role_id with the highest numeric permissions value (SUPERADMIN)."""
     async with Database().session() as s:
         result = await s.execute(select(Role.id).order_by(Role.permissions.desc()).limit(1))
         row = result.first()
