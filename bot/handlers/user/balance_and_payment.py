@@ -498,8 +498,15 @@ async def successful_payment_handler(message: Message):
     if amount <= 0:
         if sp.currency == "XTR":
             # Stars, no usable payload: reverse the conversion as a last resort.
+            stars_inst = await get_instrument_by_code("stars")
+            rate = stars_per_value(stars_inst.gateway) if stars_inst else 0.0
+            if rate <= 0:
+                rate = float(EnvKeys.STARS_PER_VALUE or 0)
+            if rate <= 0:
+                await message.answer(localize("payments.unable_determine_amount"), reply_markup=close())
+                return
             amount = int(
-                (Decimal(int(sp.total_amount)) / Decimal(str(EnvKeys.STARS_PER_VALUE)))
+                (Decimal(int(sp.total_amount)) / Decimal(str(rate)))
                 .to_integral_value(rounding=ROUND_HALF_UP)
             )
         else:

@@ -15,6 +15,23 @@
 
 ---
 
+## 2026-09-17 — Платежи: конфиг только через админку (ТЗ-04)
+
+**Ветка:** `cursor/payments-admin-config-03eb` → `main`
+
+### Сделали
+
+- Ключи Platega / CryptoPay / Stars / Telegram Payments читаются из `payment_gateways.config_json`, не из env.
+- `list_enabled_instruments` отдаёт только инструменты с заполненным конфигом шлюза.
+- Админка: подсказка webhook для `platega`, шаблоны JSON в `bot/payments/gateway_settings.py`.
+- README / `.env.example` — платёжные секреты в SQLAdmin.
+
+### Проверка
+
+- `pytest tests/test_platega_payments.py tests/test_gateway_settings.py`
+
+---
+
 ## 2026-09-17 — ТЗ-13: тесты §20, Docker/README, сдача
 
 **Ветка:** `cursor/tests-launch-tz13-03eb` → `main`
