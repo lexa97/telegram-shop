@@ -25,6 +25,7 @@ from bot.misc.caching import init_cache_manager, get_cache_manager
 from bot.misc.caching import CacheScheduler
 from bot.misc.caching import get_redis_storage
 from bot.misc.services import RecoveryManager, CleanupManager
+from bot.misc.services.fulfillment_worker import FulfillmentWorker
 from bot.misc.metrics import init_metrics, get_metrics, AnalyticsMiddleware
 from bot.database.main import Database as _Database
 
@@ -38,6 +39,7 @@ class AppContext:
     """
     recovery_manager: Optional[RecoveryManager] = None
     cleanup_manager: Optional[CleanupManager] = None
+    fulfillment_worker: Optional[FulfillmentWorker] = None
     cache_scheduler: Optional[CacheScheduler] = None
     admin_server: Optional["object"] = None  # uvicorn.Server, imported lazily
     admin_server_task: Optional[asyncio.Task] = None
@@ -153,6 +155,9 @@ async def _startup(dp: Dispatcher, bot: Bot, ctx: AppContext, storage) -> None:
     ctx.cleanup_manager = CleanupManager()
     await ctx.cleanup_manager.start()
 
+    ctx.fulfillment_worker = FulfillmentWorker(bot)
+    await ctx.fulfillment_worker.start()
+
     ctx.admin_server, ctx.admin_server_task = await _start_admin_server(bot)
 
     logging.info(f"Recovery and admin panel initialized on {EnvKeys.ADMIN_HOST}:{EnvKeys.ADMIN_PORT}")
@@ -207,6 +212,9 @@ async def _shutdown(ctx: AppContext, bot: Bot) -> None:
 
     if ctx.cleanup_manager:
         await ctx.cleanup_manager.stop()
+
+    if ctx.fulfillment_worker:
+        await ctx.fulfillment_worker.stop()
 
     if ctx.cache_scheduler:
         await ctx.cache_scheduler.stop()
