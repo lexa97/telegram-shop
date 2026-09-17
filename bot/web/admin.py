@@ -5,7 +5,7 @@ import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqladmin import Admin, ModelView
+from sqladmin import Admin, ModelView, action
 from sqladmin.authentication import AuthenticationBackend
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -83,6 +83,18 @@ from bot.database.models.main import (
     BoughtGoods, Operations, Payments, ReferralEarnings,
     AuditLog, PromoCodes, CartItems, Reviews, promo_scope_for,
 )
+from bot.database.models.fulfillment_providers import FulfillmentProvider, GoodsProviderLink
+from bot.database.models.orders import Order
+from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
+from bot.web.admin_helpers import (
+    format_order_money,
+    format_gateway_code,
+    mask_gateway_config,
+    run_manual_refund,
+    validate_json_text,
+    web_panel_operator_id,
+)
+from bot.database.models.support import SupportMessage, SupportTicket
 from bot.misc.metrics import get_metrics
 from bot.misc.caching import get_cache_manager
 from bot.database.methods.read import (
@@ -185,16 +197,6 @@ def _format_user_balance(model: Any, _name: str) -> str:
     return format_cents_for_ui(int(getattr(model, "balance", 0) or 0))
 
 
-def _format_money_column(model: Any, name: str) -> str:
-    return format_cents_for_ui(int(getattr(model, name, 0) or 0))
-
-
-def _apply_rubles_field_to_cents(data: dict, field: str) -> None:
-    raw = data.get(field)
-    if raw is not None and raw != "":
-        data[field] = rub_to_cents(Decimal(str(raw)))
-
-
 class UserAdmin(AuditModelView, model=User):
     column_list = [User.telegram_id, User.balance, User.role_id, User.referral_id,
                    User.registration_date, User.is_blocked]
@@ -208,13 +210,10 @@ class UserAdmin(AuditModelView, model=User):
         User.referral_earnings_received, User.referral_earnings_generated,
     ]
     form_overrides = {"balance": DecimalField}
-    form_widget_args = {
-        "balance": {"step": "0.01", "min": "0"},
-    }
     form_args = {
         "balance": {
             "places": 2,
-            "description": "Balance in rubles with kopecks (e.g. 150.50). Stored as kopecks in the database.",
+            "description": "Balance in rubles (e.g. 150.50). Stored as kopecks in the database.",
         },
     }
     name = "User"
@@ -254,16 +253,21 @@ class UserAdmin(AuditModelView, model=User):
 
 
 _PERM_FLAGS = [
-    (1,   "USE"),
-    (2,   "BROADCAST"),
-    (4,   "SETTINGS"),
-    (8,   "USERS"),
-    (16,  "CATALOG"),
-    (32,  "ADMINS"),
-    (64,  "OWNER"),
-    (128, "STATS"),
-    (256, "BALANCE"),
-    (512, "PROMOS"),
+    (1,     "USE"),
+    (2,     "BROADCAST"),
+    (4,     "SETTINGS"),
+    (8,     "USERS"),
+    (16,    "CATALOG"),
+    (32,    "ADMINS"),
+    (64,    "OWN"),
+    (128,   "STATS"),
+    (256,   "BALANCE"),
+    (512,   "PROMOS"),
+    (1024,  "ORDERS"),
+    (2048,  "TICKETS"),
+    (4096,  "PROVIDERS"),
+    (8192,  "PAYMENTS"),
+    (16384, "AUDIT"),
 ]
 
 
@@ -297,8 +301,9 @@ class RoleAdmin(AuditModelView, model=Role):
             "description": (
                 "Bitmask value — sum the flags you need: "
                 "USE=1, BROADCAST=2, SETTINGS=4, USERS=8, CATALOG=16, ADMINS=32, "
-                "OWNER=64, STATS=128, BALANCE=256, PROMOS=512. "
-                "Example: 927 = full Admin, 1023 = all (Owner)."
+                "OWN=64, STATS=128, BALANCE=256, PROMOS=512, ORDERS=1024, "
+                "TICKETS=2048, PROVIDERS=4096, PAYMENTS=8192, AUDIT=16384. "
+                "SUPERADMIN = sum of all flags."
             ),
         },
     }
@@ -328,25 +333,16 @@ class CategoryAdmin(AuditModelView, model=Categories):
 
 
 class GoodsAdmin(AuditModelView, model=Goods):
-    column_list = [Goods.id, Goods.name, Goods.price, Goods.sale_percent,
+    column_list = [Goods.id, Goods.name, Goods.price, Goods.fulfillment_type,
+                   Goods.allows_gift, Goods.sale_percent,
                    Goods.sale_until, Goods.description, Goods.category_id]
     column_searchable_list = [Goods.name]
     column_sortable_list = [Goods.id, Goods.name, Goods.price]
-    column_formatters = {Goods.price: _format_money_column}
-    column_formatters_detail = {Goods.price: _format_money_column}
     form_excluded_columns = [Goods.values]
-    form_overrides = {"price": DecimalField}
-    form_widget_args = {
-        "price": {"step": "0.01", "min": "0"},
-    }
     name = "Product"
     name_plural = "Products"
     icon = "fa-solid fa-box"
     form_args = {
-        "price": {
-            "places": 2,
-            "description": "Price in rubles with kopecks (e.g. 199.99). Stored as integer kopecks in the database.",
-        },
         "sale_percent": {
             "description": (
                 "Discount percent (0-100) applied while the sale is active. "
@@ -360,17 +356,6 @@ class GoodsAdmin(AuditModelView, model=Goods):
             ),
         },
     }
-
-    async def get_object_for_edit(self, value: Any) -> Any:
-        obj = await super().get_object_for_edit(value)
-        if obj is not None and obj.price is not None:
-            obj.price = cents_to_float_rub(int(obj.price))
-        return obj
-
-    async def on_model_change(
-        self, data: dict, model: Any, is_created: bool, request: Request
-    ) -> None:
-        _apply_rubles_field_to_cents(data, "price")
 
     async def _invalidate(self, model: Any) -> None:
         name = getattr(model, "name", None)
@@ -387,7 +372,10 @@ class GoodsAdmin(AuditModelView, model=Goods):
 
 
 class ItemValuesAdmin(AuditModelView, model=ItemValues):
-    column_list = [ItemValues.id, ItemValues.item_id, ItemValues.value, ItemValues.is_infinity]
+    column_list = [
+        ItemValues.id, ItemValues.item_id, ItemValues.value, ItemValues.is_infinity,
+        ItemValues.status, ItemValues.reserved_order_id,
+    ]
     column_searchable_list = [ItemValues.value]
     column_sortable_list = [ItemValues.id, ItemValues.item_id]
     name = "Stock Item"
@@ -424,8 +412,6 @@ class BoughtGoodsAdmin(ModelView, model=BoughtGoods):
                    BoughtGoods.unique_id]
     column_searchable_list = [BoughtGoods.item_name, BoughtGoods.buyer_id, BoughtGoods.unique_id]
     column_sortable_list = [BoughtGoods.id, BoughtGoods.bought_datetime, BoughtGoods.price]
-    column_formatters = {BoughtGoods.price: _format_money_column}
-    column_formatters_detail = {BoughtGoods.price: _format_money_column}
     column_default_sort = (BoughtGoods.id, True)
     can_create = False
     can_edit = False
@@ -440,8 +426,6 @@ class OperationsAdmin(ModelView, model=Operations):
                    Operations.operation_time]
     column_searchable_list = [Operations.user_id]
     column_sortable_list = [Operations.id, Operations.operation_time, Operations.operation_value]
-    column_formatters = {Operations.operation_value: _format_money_column}
-    column_formatters_detail = {Operations.operation_value: _format_money_column}
     column_default_sort = (Operations.id, True)
     can_create = False
     can_edit = False
@@ -451,13 +435,113 @@ class OperationsAdmin(ModelView, model=Operations):
     icon = "fa-solid fa-money-bill-transfer"
 
 
+class FulfillmentProviderAdmin(AuditModelView, model=FulfillmentProvider):
+    column_list = [
+        FulfillmentProvider.id,
+        FulfillmentProvider.code,
+        FulfillmentProvider.name,
+        FulfillmentProvider.enabled,
+        FulfillmentProvider.default_timeout_seconds,
+        FulfillmentProvider.default_retry_count,
+    ]
+    column_searchable_list = [FulfillmentProvider.code, FulfillmentProvider.name]
+    form_widget_args = {"config_json": {"rows": 8}}
+    name = "Fulfillment Provider"
+    name_plural = "Fulfillment Providers"
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        data["config_json"] = validate_json_text(data.get("config_json"), "config_json")
+
+
+class GoodsProviderLinkAdmin(AuditModelView, model=GoodsProviderLink):
+    column_list = [
+        GoodsProviderLink.id,
+        GoodsProviderLink.goods_id,
+        GoodsProviderLink.provider_id,
+        GoodsProviderLink.external_product_id,
+        GoodsProviderLink.cost_cents,
+        GoodsProviderLink.priority,
+        GoodsProviderLink.enabled,
+    ]
+    column_searchable_list = [GoodsProviderLink.external_product_id]
+    form_widget_args = {
+        "request_params": {"rows": 4},
+        "result_mapping": {"rows": 4},
+        "delivery_template": {"rows": 3},
+    }
+    name = "Goods Provider Link"
+    name_plural = "Goods Provider Links"
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        for key, label in (
+            ("request_params", "request_params"),
+            ("result_mapping", "result_mapping"),
+        ):
+            if key in data:
+                data[key] = validate_json_text(data.get(key), label)
+
+
+class PaymentGatewayAdmin(AuditModelView, model=PaymentGateway):
+    column_list = [
+        PaymentGateway.id,
+        PaymentGateway.code,
+        PaymentGateway.enabled,
+        PaymentGateway.config_json,
+        PaymentGateway.created_at,
+    ]
+    column_searchable_list = [PaymentGateway.code]
+    column_formatters = {
+        PaymentGateway.code: format_gateway_code,
+        PaymentGateway.config_json: mask_gateway_config,
+    }
+    column_formatters_detail = {
+        PaymentGateway.code: format_gateway_code,
+        PaymentGateway.config_json: mask_gateway_config,
+    }
+    form_widget_args = {"config_json": {"rows": 16}}
+    form_excluded_columns = (
+        [PaymentGateway.config_json] if EnvKeys.admin_panel_operator_mode() else []
+    )
+    name = "Payment Gateway"
+    name_plural = "Payment Gateways"
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        if EnvKeys.admin_panel_operator_mode():
+            data.pop("config_json", None)
+            if not is_created and getattr(model, "config_json", None):
+                data["config_json"] = model.config_json
+        elif "config_json" in data:
+            data["config_json"] = validate_json_text(data.get("config_json"), "config_json")
+
+
+class PaymentInstrumentAdmin(ModelView, model=PaymentInstrument):
+    column_list = [
+        PaymentInstrument.id,
+        PaymentInstrument.code,
+        PaymentInstrument.title,
+        PaymentInstrument.enabled,
+        PaymentInstrument.sort_order,
+        PaymentInstrument.currency,
+        PaymentInstrument.gateway_id,
+    ]
+    column_searchable_list = [PaymentInstrument.code, PaymentInstrument.title]
+    name = "Payment Instrument"
+    name_plural = "Payment Instruments"
+
+
 class PaymentsAdmin(ModelView, model=Payments):
-    column_list = [Payments.id, Payments.provider, Payments.external_id, Payments.user_id,
-                   Payments.amount, Payments.currency, Payments.status, Payments.created_at]
+    column_list = [
+        Payments.id, Payments.internal_uuid, Payments.provider, Payments.external_id, Payments.user_id,
+        Payments.amount, Payments.currency, Payments.status, Payments.created_at,
+    ]
     column_searchable_list = [Payments.user_id, Payments.external_id, Payments.provider]
     column_sortable_list = [Payments.id, Payments.created_at, Payments.amount, Payments.status]
-    column_formatters = {Payments.amount: _format_money_column}
-    column_formatters_detail = {Payments.amount: _format_money_column}
     column_default_sort = (Payments.id, True)
     can_create = False
     can_edit = False
@@ -497,14 +581,6 @@ class AuditLogAdmin(ModelView, model=AuditLog):
     icon = "fa-solid fa-clipboard-list"
 
 
-def _format_promo_discount_value(model, name: str) -> str:
-    dtype = getattr(model, "discount_type", "") or ""
-    raw = int(getattr(model, name, 0) or 0)
-    if dtype == "percent":
-        return str(raw)
-    return format_cents_for_ui(raw)
-
-
 def _format_promo_scope_html(model, name):
     """Render scope, flagging a promo whose bound category/item was deleted.
     """
@@ -531,25 +607,17 @@ def _format_promo_scope_html(model, name):
 class PromoCodeAdmin(AuditModelView, model=PromoCodes):
     column_list = [PromoCodes.id, PromoCodes.code, PromoCodes.discount_type,
                    PromoCodes.discount_value, PromoCodes.scope, PromoCodes.category_id,
-                   PromoCodes.item_id, PromoCodes.max_uses, PromoCodes.current_uses,
+                   PromoCodes.item_id, PromoCodes.max_uses, PromoCodes.max_uses_per_user,
+                   PromoCodes.min_order_cents, PromoCodes.current_uses,
                    PromoCodes.is_active, PromoCodes.expires_at, PromoCodes.created_at]
     column_searchable_list = [PromoCodes.code]
     column_sortable_list = [PromoCodes.id, PromoCodes.code, PromoCodes.created_at]
     column_default_sort = (PromoCodes.id, True)
     form_columns = [PromoCodes.code, PromoCodes.discount_type, PromoCodes.discount_value,
-                    PromoCodes.scope, PromoCodes.max_uses, PromoCodes.expires_at, PromoCodes.is_active]
-    form_overrides = {
-        "discount_type": SelectField,
-        "scope": SelectField,
-        "discount_value": DecimalField,
-    }
+                    PromoCodes.scope, PromoCodes.max_uses, PromoCodes.max_uses_per_user,
+                    PromoCodes.min_order_cents, PromoCodes.expires_at, PromoCodes.is_active]
+    form_overrides = {"discount_type": SelectField, "scope": SelectField}
     form_args = {
-        "discount_value": {
-            "places": 2,
-            "description": (
-                "Percent: 0–100. Fixed/balance: amount in rubles (stored as kopecks)."
-            ),
-        },
         "discount_type": {
             "choices": [
                 ("percent", "Percent (% off the price)"),
@@ -572,14 +640,8 @@ class PromoCodeAdmin(AuditModelView, model=PromoCodes):
             ),
         },
     }
-    column_formatters = {
-        "scope": _format_promo_scope_html,
-        PromoCodes.discount_value: _format_promo_discount_value,
-    }
-    column_formatters_detail = {
-        "scope": _format_promo_scope_html,
-        PromoCodes.discount_value: _format_promo_discount_value,
-    }
+    column_formatters = {"scope": _format_promo_scope_html}
+    column_formatters_detail = {"scope": _format_promo_scope_html}
     name = "Promo Code"
     name_plural = "Promo Codes"
     icon = "fa-solid fa-tag"
@@ -617,15 +679,6 @@ class PromoCodeAdmin(AuditModelView, model=PromoCodes):
 
         return PromoFormWithBindings
 
-    async def get_object_for_edit(self, value: Any) -> Any:
-        obj = await super().get_object_for_edit(value)
-        if obj is None:
-            return obj
-        dtype = getattr(obj, "discount_type", None)
-        if dtype in ("fixed", "balance") and obj.discount_value is not None:
-            obj.discount_value = cents_to_float_rub(int(obj.discount_value))
-        return obj
-
     async def on_model_change(self, data: dict, model: Any, is_created: bool, request: Request) -> None:
         """Validate/normalize a promo before persisting."""
         code = (data.get("code") or "").strip().upper()
@@ -645,10 +698,6 @@ class PromoCodeAdmin(AuditModelView, model=PromoCodes):
             raise ValueError("discount_value must be >= 0.")
         if dtype == "percent" and dval > 100:
             raise ValueError("A percent discount_value must be between 0 and 100.")
-        if dtype in ("fixed", "balance"):
-            data["discount_value"] = rub_to_cents(dval)
-        else:
-            data["discount_value"] = int(dval)
 
         # The SelectFields coerce to int or None; normalize anything else too.
         def _as_id(v):
@@ -764,6 +813,126 @@ async def prometheus_metrics(request: Request) -> PlainTextResponse:
     return PlainTextResponse(metrics.export_to_prometheus(), media_type="text/plain")
 
 
+class OrderAdmin(ModelView, model=Order):
+    column_list = [
+        Order.id,
+        Order.user_id,
+        Order.goods_id,
+        Order.status,
+        Order.total_cents,
+        Order.profit_cents,
+        Order.delivery_type,
+        Order.created_at,
+        Order.completed_at,
+    ]
+    column_sortable_list = [Order.id, Order.created_at, Order.status]
+    column_default_sort = (Order.id, True)
+    column_formatters = {
+        Order.total_cents: format_order_money,
+        Order.profit_cents: format_order_money,
+        Order.price_cents: format_order_money,
+        Order.discount_cents: format_order_money,
+        Order.cost_cents: format_order_money,
+    }
+    column_formatters_detail = column_formatters
+    column_details_list = [
+        Order.id,
+        Order.user_id,
+        Order.goods_id,
+        Order.quantity,
+        Order.status,
+        Order.price_cents,
+        Order.discount_cents,
+        Order.total_cents,
+        Order.cost_cents,
+        Order.fee_cents,
+        Order.referral_amount_cents,
+        Order.profit_cents,
+        Order.delivery_type,
+        Order.provider_id,
+        Order.provider_external_order_id,
+        Order.created_at,
+        Order.completed_at,
+    ]
+    can_create = False
+    can_delete = False
+    can_edit = False
+    name = "Order"
+    name_plural = "Orders"
+    icon = "fa-solid fa-receipt"
+
+    @action(
+        name="manual_refund",
+        label="Refund to balance",
+        confirmation_message="Credit order total to user balance and mark REFUNDED?",
+        add_in_list=True,
+        add_in_detail=True,
+    )
+    async def manual_refund_action(self, request: Request) -> RedirectResponse:
+        pks = (request.query_params.get("pks") or "").split(",")
+        operator_id = web_panel_operator_id()
+        messages: list[str] = []
+        for pk in pks:
+            pk = pk.strip()
+            if not pk:
+                continue
+            try:
+                oid = int(pk)
+            except ValueError:
+                continue
+            msg, _ = await run_manual_refund(oid, operator_id)
+            messages.append(msg)
+        flash = messages[0] if messages else "No order selected."
+        return RedirectResponse(
+            url=f"/admin/order/list?msg={escape(flash)[:200]}",
+            status_code=303,
+        )
+
+
+class SupportTicketAdmin(AuditModelView, model=SupportTicket):
+    column_list = [
+        SupportTicket.id,
+        SupportTicket.user_id,
+        SupportTicket.status,
+        SupportTicket.linked_order_id,
+        SupportTicket.updated_at,
+    ]
+    column_sortable_list = [SupportTicket.id, SupportTicket.updated_at]
+    form_columns = [SupportTicket.status]
+    can_create = False
+    can_delete = False
+    name = "Support Ticket"
+    name_plural = "Support Tickets"
+    icon = "fa-solid fa-life-ring"
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        from bot.database.models.support import TicketStatus
+
+        status = data.get("status")
+        if status and status not in TicketStatus.ALL:
+            raise ValueError(f"status must be one of: {', '.join(sorted(TicketStatus.ALL))}")
+
+
+class SupportMessageAdmin(ModelView, model=SupportMessage):
+    column_list = [
+        SupportMessage.id,
+        SupportMessage.ticket_id,
+        SupportMessage.author_role,
+        SupportMessage.author_user_id,
+        SupportMessage.body,
+        SupportMessage.created_at,
+    ]
+    column_sortable_list = [SupportMessage.id, SupportMessage.created_at]
+    can_create = False
+    can_edit = False
+    can_delete = False
+    name = "Support Message"
+    name_plural = "Support Messages"
+    icon = "fa-solid fa-comment-dots"
+
+
 async def metrics_json(request: Request) -> JSONResponse:
     if not request.session.get("authenticated"):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -783,11 +952,14 @@ def create_admin_app(bot: Any = None) -> Starlette:
     async def root_redirect(request: Request) -> RedirectResponse:
         return RedirectResponse(url="/admin")
 
+    from bot.web.payment_webhooks import platega_webhook
+
     routes = [
         Route("/", root_redirect),
         Route("/health", health_check),
         Route("/metrics", metrics_json),
         Route("/metrics/prometheus", prometheus_metrics),
+        Route("/webhooks/platega", platega_webhook, methods=["POST"]),
     ] + export_routes
 
     app = Starlette(routes=routes)
@@ -813,14 +985,26 @@ def create_admin_app(bot: Any = None) -> Starlette:
     admin.add_view(RoleAdmin)
     admin.add_view(CategoryAdmin)
     admin.add_view(GoodsAdmin)
+    admin.add_view(FulfillmentProviderAdmin)
+    admin.add_view(GoodsProviderLinkAdmin)
     admin.add_view(ItemValuesAdmin)
     admin.add_view(BoughtGoodsAdmin)
     admin.add_view(OperationsAdmin)
+    admin.add_view(PaymentGatewayAdmin)
+    admin.add_view(PaymentInstrumentAdmin)
     admin.add_view(PaymentsAdmin)
+    admin.add_view(OrderAdmin)
     admin.add_view(ReferralEarningsAdmin)
     admin.add_view(AuditLogAdmin)
     admin.add_view(PromoCodeAdmin)
     admin.add_view(CartItemsAdmin)
+    admin.add_view(SupportTicketAdmin)
+    admin.add_view(SupportMessageAdmin)
+    from bot.web.panel_views import SalesStatsView, StockImportView, SupportReplyView
+
+    admin.add_view(SalesStatsView)
+    admin.add_view(StockImportView)
+    admin.add_view(SupportReplyView)
     if EnvKeys.REVIEWS_ENABLED == "1":
         admin.add_view(ReviewsAdmin)
 

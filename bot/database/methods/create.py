@@ -8,7 +8,8 @@ from bot.database.models.main import PromoCodes, CartItems, Reviews, StockSubscr
 from bot.database import Database
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.read import invalidate_stats_cache, invalidate_item_cache, invalidate_category_cache
-from bot.money import MoneyInput, rub_to_cents
+from bot.catalog.enums import StockUnitStatus
+from bot.money import rub_to_cents
 
 # Cart limits: distinct positions per cart, and units of any one position.
 CART_MAX_ITEMS = 10
@@ -37,9 +38,15 @@ async def create_user(telegram_id: int, registration_date: datetime, referral_id
 
 
 async def create_item(
-    item_name: str, item_description: str, item_price: MoneyInput, category_name: str,
+    item_name: str,
+    item_description: str,
+    item_price: int,
+    category_name: str,
+    *,
+    fulfillment_type: str = "STOCK",
+    allows_gift: bool = False,
 ) -> None:
-    """Insert item (goods); commit. ``item_price`` is rubles (max 2 dp) from admin; stored as kopecks."""
+    """Insert item (goods); commit. ``item_price`` is whole rubles from admin; stored as kopecks."""
     price_cents = rub_to_cents(item_price)
     async with Database().session() as s:
         result = await s.execute(select(exists().where(Goods.name == item_name)))
@@ -54,6 +61,8 @@ async def create_item(
                 description=item_description,
                 price=price_cents,
                 category_id=cat,
+                fulfillment_type=fulfillment_type,
+                allows_gift=allows_gift,
             )
         )
 
@@ -83,7 +92,14 @@ async def add_values_to_item(item_name: str, value: str, is_infinity: bool) -> b
             if dup:
                 return False
 
-            s.add(ItemValues(item_id=item_id, value=value_norm, is_infinity=bool(is_infinity)))
+            s.add(
+                ItemValues(
+                    item_id=item_id,
+                    value=value_norm,
+                    is_infinity=bool(is_infinity),
+                    status=StockUnitStatus.AVAILABLE,
+                )
+            )
     except IntegrityError:
         return False
 
@@ -152,7 +168,12 @@ async def add_values_bulk(
                 await s.execute(
                     sa_insert(ItemValues),
                     [
-                        {"item_id": item_id, "value": v, "is_infinity": bool(is_infinity)}
+                        {
+                            "item_id": item_id,
+                            "value": v,
+                            "is_infinity": bool(is_infinity),
+                            "status": StockUnitStatus.AVAILABLE,
+                        }
                         for v in to_insert
                     ],
                 )
@@ -190,17 +211,28 @@ async def create_category(category_name: str) -> None:
     safe_create_task(invalidate_category_cache(category_name))
 
 
-async def create_pending_payment(provider: str, external_id: str, user_id: int, amount: int, currency: str) -> None:
+async def create_pending_payment(
+    provider: str,
+    external_id: str,
+    user_id: int,
+    amount: int,
+    currency: str,
+    *,
+    internal_uuid: str | None = None,
+) -> None:
     """Create pending payment."""
     async with Database().session() as s:
-        s.add(Payments(
-            provider=provider,
-            external_id=external_id,
-            user_id=user_id,
-            amount=int(amount),
-            currency=currency,
-            status="pending"
-        ))
+        s.add(
+            Payments(
+                provider=provider,
+                external_id=external_id,
+                user_id=user_id,
+                amount=int(amount),
+                currency=currency,
+                status="pending",
+                internal_uuid=internal_uuid,
+            )
+        )
 
 
 async def create_role(name: str, permissions: int) -> int | None:
@@ -223,6 +255,8 @@ async def create_promo_code(
         expires_at=None,
         category_id: int = None,
         item_id: int = None,
+        min_order_cents: int = 0,
+        max_uses_per_user: int = 1,
 ) -> int | None:
     """Create a promo code. Returns ID or None if code already exists.
 
@@ -248,6 +282,8 @@ async def create_promo_code(
             discount_value=stored_value,
             scope=promo_scope_for(category_id, item_id),
             max_uses=max_uses,
+            min_order_cents=int(min_order_cents or 0),
+            max_uses_per_user=int(max_uses_per_user or 1),
             expires_at=expires_at,
             category_id=category_id,
             item_id=item_id,

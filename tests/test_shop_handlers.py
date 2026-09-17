@@ -10,7 +10,7 @@ from bot.database.methods.read import (
     get_cart_items, get_cart_count, is_subscribed_to_stock,
 )
 from bot.database.models.main import PromoCodes
-from bot.handlers.user.balance_and_payment import buy_item_callback_handler
+from bot.handlers.user.balance_and_payment import buy_item_callback_handler, buy_confirm_handler
 from bot.handlers.user.cart import (
     cart_qty_handler, view_cart_handler, cart_checkout_confirm_handler,
     _show_cart, RECEIPT_MAX_BUTTONS,
@@ -710,6 +710,7 @@ class TestBackFromItemCardAfterPurchase:
 
         buy = make_callback_query(data="buy_item", user_id=660001)
         await buy_item_callback_handler(buy, fsm_context)
+        await buy_confirm_handler(make_callback_query(data="buy_confirm", user_id=660001), fsm_context)
 
         # Receipt -> Back returns to the item card.
         back = make_callback_query(data="back_to_item", user_id=660001)
@@ -732,6 +733,7 @@ class TestBackFromItemCardAfterPurchase:
 
         buy = make_callback_query(data="buy_item", user_id=660002)
         await buy_item_callback_handler(buy, fsm_context)
+        await buy_confirm_handler(make_callback_query(data="buy_confirm", user_id=660002), fsm_context)
 
         back = make_callback_query(data="back_to_item", user_id=660002)
         await back_to_item_handler(back, fsm_context)
@@ -803,6 +805,7 @@ class TestBackFromItemCardAfterPurchase:
         await item_info_callback_handler(make_callback_query(data="itm:0:0", user_id=660004), fsm_context)
 
         await buy_item_callback_handler(make_callback_query(data="buy_item", user_id=660004), fsm_context)
+        await buy_confirm_handler(make_callback_query(data="buy_confirm", user_id=660004), fsm_context)
         await back_to_item_handler(make_callback_query(data="back_to_item", user_id=660004), fsm_context)
 
         # The card's Back is gp_0.

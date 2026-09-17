@@ -98,7 +98,7 @@ async def check_role_name_by_id(role_id: int) -> str:
 
 
 async def select_max_role_id() -> Optional[int]:
-    """Return role_id with the highest numeric permissions value (OWNER=127)."""
+    """Return role_id with the highest numeric permissions value (SUPERADMIN)."""
     async with Database().session() as s:
         result = await s.execute(select(Role.id).order_by(Role.permissions.desc()).limit(1))
         row = result.first()
@@ -263,12 +263,14 @@ async def get_item_name_by_id(item_id: int) -> str | None:
 
 
 async def select_item_values_amount(item_name: str) -> int:
-    """Return count of item_values for an item (by item name)."""
+    """Return count of sellable stock units for an item (AVAILABLE finite + any infinite row)."""
+    from bot.catalog.stock import stock_unit_available_clause
+
     async with Database().session() as s:
         return (await s.execute(
             select(func.count(ItemValues.id))
             .join(Goods, Goods.id == ItemValues.item_id)
-            .where(Goods.name == item_name)
+            .where(Goods.name == item_name, stock_unit_available_clause())
         )).scalar() or 0
 
 
@@ -672,8 +674,16 @@ async def get_promo_code(code: str) -> dict | None:
     return await _fetch_one_dict(PromoCodes, PromoCodes.code == code.upper())
 
 
-async def promo_rule_error(s, promo, user_id, *, goods=None, require_balance=False,
-                           used: bool | None = None) -> str | None:
+async def promo_rule_error(
+    s,
+    promo,
+    user_id,
+    *,
+    goods=None,
+    require_balance=False,
+    used: bool | None = None,
+    order_total_cents: int | None = None,
+) -> str | None:
     """Shared promo-code business rules; returns a canonical error code or None if valid.
 
     Canonical codes: not_found, inactive, wrong_type, expired, max_uses, already_used, wrong_item, wrong_category
@@ -708,13 +718,17 @@ async def promo_rule_error(s, promo, user_id, *, goods=None, require_balance=Fal
     if 0 < promo.max_uses <= promo.current_uses:
         return "max_uses"
 
+    if not require_balance and order_total_cents is not None:
+        min_cents = int(getattr(promo, "min_order_cents", 0) or 0)
+        if min_cents > 0 and order_total_cents < min_cents:
+            return "min_order"
+
+    from bot.database.methods.promo_usage import count_promo_usages_for_user
+
+    max_per_user = int(getattr(promo, "max_uses_per_user", 1) or 1)
     if used is None:
-        used = (await s.execute(
-            select(exists().where(
-                PromoCodeUsages.promo_id == promo.id,
-                PromoCodeUsages.user_id == user_id,
-            ))
-        )).scalar()
+        usage_count = await count_promo_usages_for_user(s, promo.id, user_id)
+        used = usage_count >= max_per_user
     if used:
         return "already_used"
 
@@ -741,6 +755,7 @@ _VALIDATE_PROMO_ERRORS = {
     "already_used": "promo.already_used",
     "wrong_item": "promo.wrong_item",
     "wrong_category": "promo.wrong_category",
+    "min_order": "promo.min_order",
 }
 
 
@@ -790,14 +805,16 @@ async def validate_promos_for_cart(
         )).scalars().all()
         promo_by_code = {p.code: p for p in promos}
 
-        used_ids: set[int] = set()
+        from collections import Counter
+
+        from bot.database.methods.promo_usage import count_promo_usages_for_user
+
+        usage_by_promo: Counter[int] = Counter()
         if promos:
-            used_ids = set((await s.execute(
-                select(PromoCodeUsages.promo_id).where(
-                    PromoCodeUsages.user_id == user_id,
-                    PromoCodeUsages.promo_id.in_([p.id for p in promos]),
+            for p in promos:
+                usage_by_promo[p.id] = await count_promo_usages_for_user(
+                    s, p.id, user_id
                 )
-            )).scalars().all())
 
         out: dict[int, tuple[bool, str, dict]] = {}
         for ln in coded:
@@ -807,9 +824,25 @@ async def validate_promos_for_cart(
                 SimpleNamespace(id=info['id'], category_id=info['category_id'])
                 if info else None
             )
+            line_total_cents = None
+            if info is not None:
+                unit_cents = int(info.get("price_cents") or info.get("price") or 0)
+                qty = int(ln.get("quantity") or 1)
+                line_total_cents = unit_cents * qty
+            max_per_user = (
+                int(getattr(promo, "max_uses_per_user", 1) or 1) if promo else 1
+            )
+            used_up = (
+                usage_by_promo.get(promo.id, 0) >= max_per_user if promo else False
+            )
             err = await promo_rule_error(
-                s, promo, user_id, goods=goods, require_balance=False,
-                used=(promo.id in used_ids) if promo else False,
+                s,
+                promo,
+                user_id,
+                goods=goods,
+                require_balance=False,
+                used=used_up,
+                order_total_cents=line_total_cents,
             )
             if err:
                 out[ln['id']] = (False, _VALIDATE_PROMO_ERRORS[err], {})

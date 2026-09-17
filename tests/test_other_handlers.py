@@ -3,8 +3,11 @@ from unittest.mock import patch, MagicMock
 from aiogram.enums import ChatMemberStatus
 
 from bot.handlers.other import (
-    check_sub_channel, _any_payment_method_enabled, generate_short_hash, is_safe_item_name,
-    caller_name, display_name,
+    check_sub_channel,
+    generate_short_hash,
+    is_safe_item_name,
+    caller_name,
+    display_name,
 )
 
 
@@ -69,20 +72,25 @@ class TestCheckSubChannel:
         assert await check_sub_channel(member) is expected
 
 
-class TestAnyPaymentMethodEnabled:
+class TestPaymentMethodsAvailable:
 
-    @pytest.mark.parametrize("crypto,stars,provider,expected", [
-        ("token", 0.91, "provider", True),  # all three configured
-        ("", 0, "", False),                 # none configured
-        ("token", 0, "", True),             # crypto only
-        ("", 0.91, "", True),               # stars only
-    ])
-    def test_enabled(self, crypto, stars, provider, expected):
-        with patch('bot.handlers.other.EnvKeys') as env:
-            env.CRYPTO_PAY_TOKEN = crypto
-            env.STARS_PER_VALUE = stars
-            env.TELEGRAM_PROVIDER_TOKEN = provider
-            assert _any_payment_method_enabled() is expected
+    @pytest.mark.asyncio
+    async def test_enabled_when_instrument_configured(self):
+        from bot.handlers.other import payment_methods_available
+
+        assert await payment_methods_available() is True
+
+    @pytest.mark.asyncio
+    async def test_disabled_when_no_configured_gateways(self):
+        from bot.database import Database
+        from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
+        from bot.handlers.other import payment_methods_available
+        from sqlalchemy import update
+
+        async with Database().session() as s:
+            await s.execute(update(PaymentInstrument).values(enabled=False))
+            await s.execute(update(PaymentGateway).values(enabled=False))
+        assert await payment_methods_available() is False
 
 
 class TestGenerateShortHash:

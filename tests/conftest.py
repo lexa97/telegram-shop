@@ -109,11 +109,20 @@ def setup_test_database():
     db = Database()
 
     async def _setup():
-        import bot.database.models  # noqa: F401 — register Order tables on metadata
+        import bot.database.models  # noqa: F401 — register ORM tables on metadata
+        import bot.database.models.support  # noqa: F401
         async with db.engine.begin() as conn:
             await conn.run_sync(Database.BASE.metadata.create_all)
         from bot.database.models.main import Role
         await Role.insert_roles()
+        from bot.database.methods.fulfillment_seed import seed_fulfillment_providers
+        from bot.database.methods.payment_config import (
+            seed_default_payment_config,
+            seed_test_payment_credentials,
+        )
+        await seed_fulfillment_providers()
+        await seed_default_payment_config()
+        await seed_test_payment_credentials()
 
     asyncio.run(_setup())
 
@@ -129,6 +138,15 @@ async def db_cleanup(setup_test_database):
     Clean all data between tests by deleting rows from all tables
     (except roles which are session-scoped).
     """
+    from bot.database.methods.fulfillment_seed import seed_fulfillment_providers
+    from bot.database.methods.payment_config import (
+        seed_default_payment_config,
+        seed_test_payment_credentials,
+    )
+    await seed_fulfillment_providers()
+    await seed_default_payment_config()
+    await seed_test_payment_credentials()
+
     yield
 
     from bot.database.main import Database
@@ -139,27 +157,38 @@ async def db_cleanup(setup_test_database):
         StockSubscriptions,
     )
     from bot.database.models.orders import OrderStatusHistory, Order
+    from bot.database.models.support import SupportMessage, SupportTicket
 
     db = Database()
     async with db.session() as s:
         # Delete in FK order.
+        await s.execute(delete(SupportMessage))
+        await s.execute(delete(SupportTicket))
         await s.execute(delete(Reviews))
         await s.execute(delete(StockSubscriptions))
         await s.execute(delete(CartItems))
         await s.execute(delete(PromoCodeUsages))
         await s.execute(delete(PromoCodes))
         await s.execute(delete(ReferralEarnings))
+        from bot.database.models.fulfillment_providers import GoodsProviderLink, FulfillmentProvider
         await s.execute(delete(OrderStatusHistory))
         await s.execute(delete(BoughtGoods))
         await s.execute(delete(Order))
+        await s.execute(delete(GoodsProviderLink))
+        await s.execute(delete(FulfillmentProvider))
         await s.execute(delete(Operations))
+        from bot.database.models.payment_config import PaymentInstrument, PaymentGateway
+        await s.execute(delete(PaymentInstrument))
+        await s.execute(delete(PaymentGateway))
         await s.execute(delete(Payments))
         await s.execute(delete(ItemValues))
         await s.execute(delete(Goods))
         await s.execute(delete(Categories))
         await s.execute(delete(User))
         # Delete custom roles (keep built-in)
-        await s.execute(delete(Role).where(Role.name.notin_(['USER', 'ADMIN', 'OWNER'])))
+        await s.execute(delete(Role).where(Role.name.notin_(
+            ['USER', 'ADMIN', 'SUPERADMIN', 'OPERATOR', 'MANAGER']
+        )))
 
 
 @pytest.fixture(autouse=True)

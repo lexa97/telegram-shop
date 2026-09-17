@@ -14,8 +14,7 @@ def main_menu(role: int, channel: str | None = None, helper: str | None = None) 
     kb.button(text=localize("btn.shop"), callback_data="shop")
     kb.button(text=localize("btn.rules"), callback_data="rules")
     kb.button(text=localize("btn.profile"), callback_data="profile")
-    if helper:
-        kb.button(text=localize("btn.support"), url=f"tg://user?id={helper}")
+    kb.button(text=localize("btn.support"), callback_data="support")
     if channel:
         kb.button(text=localize("btn.channel"), url=f"https://t.me/{channel.lstrip('@')}")
     if Permission.has_any_admin_perm(role):
@@ -36,6 +35,7 @@ def profile_keyboard(referral_percent: int, user_items: int = 0, cart_count: int
         kb.button(text=localize("btn.purchased"), callback_data="bought_items")
     cart_text = localize("btn.cart", count=cart_count) if cart_count > 0 else localize("btn.cart_empty")
     kb.button(text=cart_text, callback_data="cart")
+    kb.button(text=localize("btn.my_orders"), callback_data="my_orders")
     kb.button(text=localize("btn.operation_history"), callback_data="operation_history")
     kb.button(text=localize("btn.redeem_promo"), callback_data="redeem_promo")
     kb.button(text=localize("btn.back"), callback_data="back_to_menu")
@@ -48,12 +48,15 @@ def admin_console_keyboard(maintenance_mode: bool = False, role: int = 127) -> I
     Admin panel — shows only buttons the user has permissions for.
     """
     kb = InlineKeyboardBuilder()
-    if role & Permission.CATALOG_MANAGE:
+    if role & (Permission.CATALOG_MANAGE | Permission.STATS_VIEW):
         kb.button(text=localize("admin.menu.shop"), callback_data="shop_management")
+    if role & Permission.CATALOG_MANAGE:
         kb.button(text=localize("admin.menu.goods"), callback_data="goods_management")
         kb.button(text=localize("admin.menu.categories"), callback_data="categories_management")
     if role & Permission.PROMO_MANAGE:
         kb.button(text=localize("admin.menu.promo"), callback_data="promo_mgmt")
+    if role & Permission.TICKETS_MANAGE:
+        kb.button(text=localize("admin.menu.support"), callback_data="support_tickets")
     if role & Permission.USERS_MANAGE:
         kb.button(text=localize("admin.menu.users"), callback_data="user_management")
     if role & Permission.ADMINS_MANAGE:
@@ -142,6 +145,7 @@ def item_info(
         review_count: int = 0, has_purchased: bool = False,
         applied_promo: str = None, reviews_enabled: bool = True,
         out_of_stock: bool = False, subscribed: bool = False,
+        allows_gift: bool = False,
 ) -> InlineKeyboardMarkup:
     """
     Product card with buy, cart, promo, review buttons.
@@ -151,6 +155,8 @@ def item_info(
     """
     kb = InlineKeyboardBuilder()
     kb.button(text=localize("btn.buy"), callback_data="buy_item")
+    if allows_gift and not out_of_stock:
+        kb.button(text=localize("btn.buy_gift"), callback_data="buy_gift")
     kb.button(text=localize("btn.add_to_cart"), callback_data="add_to_cart")
     if applied_promo:
         kb.button(text=localize("btn.remove_promo"), callback_data="remove_promo")
@@ -215,7 +221,7 @@ def payment_menu(pay_url: str) -> InlineKeyboardMarkup:
 
 def get_payment_choice() -> InlineKeyboardMarkup:
     """
-    Select a payment method.
+    Select a payment method (legacy env-only buttons).
     """
     return simple_buttons(
         [
@@ -226,6 +232,13 @@ def get_payment_choice() -> InlineKeyboardMarkup:
         ],
         per_row=1,
     )
+
+
+def payment_choice_from_instruments(instruments) -> InlineKeyboardMarkup:
+    """Build payment method keyboard from DB instruments (ТЗ-04)."""
+    rows = [(inst.title, f"pay_inst_{inst.code}") for inst in instruments]
+    rows.append((localize("btn.back"), "replenish_balance"))
+    return simple_buttons(rows, per_row=1)
 
 
 def question_buttons(question: str, back_data: str) -> InlineKeyboardMarkup:

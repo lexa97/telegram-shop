@@ -54,6 +54,12 @@ class EnvKeys(ABC):
     REFERRAL_PERCENT: Final = int(_get_optional("REFERRAL_PERCENT", "0"))
     PAY_CURRENCY: Final = _get_optional("PAY_CURRENCY", "RUB")
     PAYMENT_TIME: Final = int(_get_optional("PAYMENT_TIME", "1800"))
+    PLATEGA_MERCHANT_ID: Final = _get_optional("PLATEGA_MERCHANT_ID", "")
+    PLATEGA_SECRET: Final = _get_optional("PLATEGA_SECRET", "")
+    PLATEGA_BASE_URL: Final = _get_optional("PLATEGA_BASE_URL", "https://app.platega.io")
+    PLATEGA_PAYMENT_METHOD: Final = int(_get_optional("PLATEGA_PAYMENT_METHOD", "11"))
+    PLATEGA_RETURN_URL: Final = _get_optional("PLATEGA_RETURN_URL", "https://t.me")
+    PLATEGA_FAILED_URL: Final = _get_optional("PLATEGA_FAILED_URL", "https://t.me")
     MIN_AMOUNT: Final = int(_get_optional("MIN_AMOUNT", "20"))
     MAX_AMOUNT: Final = int(_get_optional("MAX_AMOUNT", "10000"))
 
@@ -79,6 +85,10 @@ class EnvKeys(ABC):
     ADMIN_PASSWORD: Final = _get_optional("ADMIN_PASSWORD", _DEFAULT_ADMIN_PASSWORD)
     SECRET_KEY: Final = _get_optional("SECRET_KEY", _DEFAULT_SECRET_KEY)
     ADMIN_COOKIE_SECURE: Final = _get_optional("ADMIN_COOKIE_SECURE", "auto")
+    # When "1", SQLAdmin hides payment gateway secrets (OPERATOR-style panel login).
+    ADMIN_PANEL_OPERATOR: Final = _get_optional("ADMIN_PANEL_OPERATOR", "0")
+    # Telegram id used in audit for web panel staff actions (refund, support reply).
+    ADMIN_WEB_OPERATOR_ID: Final = _get_optional("ADMIN_WEB_OPERATOR_ID", "0")
 
     # Webhook
     WEBHOOK_ENABLED: Final = _get_optional("WEBHOOK_ENABLED", "0")
@@ -106,6 +116,10 @@ class EnvKeys(ABC):
             cls.ADMIN_HOST.strip().lower() not in _LOOPBACK_HOSTS
             or cls.WEBHOOK_ENABLED == "1"
         )
+
+    @classmethod
+    def admin_panel_operator_mode(cls) -> bool:
+        return cls.ADMIN_PANEL_OPERATOR.strip().lower() in ("1", "true", "yes")
 
     @classmethod
     def session_cookie_secure(cls) -> bool:

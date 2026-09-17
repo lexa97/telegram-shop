@@ -251,8 +251,12 @@ The data model, in plain terms:
 - **promo_codes** (+ per‑user usages) — a promo can be bound to a category or a product. It
   carries its own `scope` because the bindings are `ON DELETE SET NULL`. A promo whose target is gone
   stays scoped and applies to nothing.
+- **orders** — lifecycle `CREATED` → `PROCESSING` → `COMPLETED` (and `FAILED` / `EXPIRED` /
+  `REFUNDED`) with a frozen price snapshot per order.
 - **referral_earnings**, and an **audit_log** of every admin action. All money is stored as
-  exact `NUMERIC(12,2)` — never floats.
+  **integer kopecks** (`BIGINT` fields named `*_cents`) — never floats. Display layers convert
+  to rubles for the UI; v1 currency is **RUB only**. **Balance withdrawal is not implemented**
+  in v1 (top-up and spend on goods only).
 
 ---
 
@@ -268,13 +272,19 @@ are **required**; everything else has a sensible default.
 |-----------------------------|---------------------------------------------------------------------------|----------------|
 | `TOKEN`                     | Bot token from [@BotFather](https://telegram.me/BotFather)                | **required**   |
 | `OWNER_ID`                  | Your [Telegram ID](https://telegram.me/myidbot) — becomes the first OWNER | **required**   |
-| `TELEGRAM_PROVIDER_TOKEN`   | Token for Telegram Payments (fiat)                                        | –              |
-| `CRYPTO_PAY_TOKEN`          | CryptoPay API token                                                       | –              |
-| `STARS_PER_VALUE`           | Telegram Stars exchange rate (`0` disables Stars)                         | `0.91`         |
 | `PAY_CURRENCY`              | Display currency (RUB, USD, EUR…)                                         | `RUB`          |
 | `REFERRAL_PERCENT`          | Referral commission % (0–99)                                              | `0`            |
 | `PAYMENT_TIME`              | Invoice validity, seconds                                                 | `1800`         |
-| `MIN_AMOUNT` / `MAX_AMOUNT` | Allowed top‑up range                                                      | `20` / `10000` |
+| `MIN_AMOUNT` / `MAX_AMOUNT` | Allowed top‑up range (display units; stored as kopecks after credit)      | `20` / `10000` |
+
+**Payment gateways (Platega, CryptoPay, Stars, Telegram Payments)** are configured in the web
+admin: **Payment Gateways** (`config_json` credentials) and **Payment Instruments** (what users
+see, sort order, `enabled`). The bot reads only the database, not `PLATEGA_*` / `CRYPTO_PAY_*` env.
+
+**Platega webhook:** in the Platega dashboard set `POST https://<your-domain>/webhooks/platega`
+(admin panel port `ADMIN_PORT`, usually `9090` behind HTTPS). Headers `X-MerchantId` and
+`X-Secret` must match `config_json` on the `platega` gateway row. Idempotent credit is covered
+by tests (`tests/test_platega_payments.py`).
 
 </details>
 
@@ -349,7 +359,9 @@ healthy. To run without caching, set `REDIS_ENABLED=0` in `.env` — the bot the
 entirely (in‑memory FSM, no caching).
 
 The container applies migrations (`alembic upgrade head`), seeds roles, starts the bot, and
-launches the admin panel at http://localhost:9090/admin. Logs: `docker compose logs -f bot`.
+launches the admin panel at http://localhost:9090/admin (`/health` for probes). Port **8080**
+is published for the optional Telegram **bot** webhook listener (`WEBHOOK_ENABLED=1`); Platega
+callbacks use the **admin** port (`/webhooks/platega`), not 8080. Logs: `docker compose logs -f bot`.
 
 > On Linux, if `./logs` or `./data` hit permission errors, set `PUID`/`PGID` in `.env` to your
 > host user (`id` shows them).
@@ -378,6 +390,11 @@ Two ways to manage the shop:
 - **Web panel** (SQLAdmin, `/admin`) — browse/search/edit every table. The landing page is a
   **built‑in cheat sheet** explaining the product→stock workflow and the permission bitmask.
 
+**Built-in roles (RBAC):** `USER` (shop only), `OPERATOR` (users, orders, tickets, stats — no
+role edits, no balance top-ups), `MANAGER` (catalog, promos, providers), `ADMIN` (payments config,
+balance), `SUPERADMIN` (full access). Custom roles use the same permission bitmask as in the
+in-chat role editor.
+
 **Selling goods:** a *Product* is the listing; its sellable units are separate *Stock Items*
 (one per account/key, or a single `is_infinity` unit for unlimited delivery). Renaming or
 deleting a product keeps carts, reviews, and purchase history consistent automatically.
@@ -397,9 +414,10 @@ cached stock count and notifies everyone waiting on that product, exactly as the
 
 ### Reliability
 
-Background workers recover stuck CryptoPay payments (checked every 5 min, verified against the
-API, idempotent), run periodic DB/Redis health checks (which also replay cache invalidations
-deferred during a Redis outage), and clean up old audit logs / pending payments. File logging
+Background workers recover stuck CryptoPay / Platega payments (checked every 5 min, idempotent),
+poll API orders in `PROCESSING`, expire unpaid `CREATED` orders, and fail hung fulfillments;
+periodic DB/Redis health checks replay cache invalidations deferred during a Redis outage;
+daily cleanup prunes old audit logs / pending payments. File logging
 is queued off the event loop, so disk writes never stall update handling; the audit trail is
 written to file synchronously and to the database in batches, so a crash can cost the DB copy
 of the last few seconds but never the log itself. Shutdown is graceful (tasks cancelled, metrics
@@ -579,7 +597,8 @@ users waiting for it, just like the in‑chat flow.
 
 ## 🧪 Testing
 
-**958 tests, 76 % line coverage** (`pytest`). The data layer runs against a
+**1000+ tests** (`pytest`; run `pytest tests/test_tz13_coverage_map.py` to verify §20 mapping).
+The data layer runs against a
 real in‑memory async SQLite database (real SQL, transactions, and constraints) — only external
 services are mocked (Telegram Bot API, CryptoPay, Redis). What's covered:
 

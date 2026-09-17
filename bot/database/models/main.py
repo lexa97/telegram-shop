@@ -17,10 +17,30 @@ class Permission:
     USERS_MANAGE    = 1 << 3   #   8 — view/block/unblock users, referrals, purchases
     CATALOG_MANAGE  = 1 << 4   #  16 — categories, positions, items/goods CRUD
     ADMINS_MANAGE   = 1 << 5   #  32 — role CRUD, role assignment
-    OWN             = 1 << 6   #  64 — owner-only operations
+    OWN             = 1 << 6   #  64 — owner-only operations (env OWNER_ID bypass)
     STATS_VIEW      = 1 << 7   # 128 — statistics, logs, bought-item search
     BALANCE_MANAGE  = 1 << 8   # 256 — top-up / deduct user balance
     PROMO_MANAGE    = 1 << 9   # 512 — promo code CRUD
+    ORDERS_MANAGE   = 1 << 10  # 1024 — orders, manual refund, cancel
+    TICKETS_MANAGE  = 1 << 11  # 2048 — support tickets (ТЗ-09)
+    PROVIDERS_MANAGE = 1 << 12  # 4096 — fulfillment providers / links
+    PAYMENTS_CONFIG = 1 << 13  # 8192 — payment gateways & secrets (panel / future bot UI)
+    AUDIT_VIEW      = 1 << 14  # 16384 — audit log access
+
+    _ALL_BITS = (
+        USE, BROADCAST, SETTINGS_MANAGE, USERS_MANAGE, CATALOG_MANAGE,
+        ADMINS_MANAGE, OWN, STATS_VIEW, BALANCE_MANAGE, PROMO_MANAGE,
+        ORDERS_MANAGE, TICKETS_MANAGE, PROVIDERS_MANAGE, PAYMENTS_CONFIG,
+        AUDIT_VIEW,
+    )
+
+    @staticmethod
+    def all_bits() -> int:
+        """Bitmask with every defined permission (SUPERADMIN seed)."""
+        mask = 0
+        for bit in Permission._ALL_BITS:
+            mask |= bit
+        return mask
 
     @staticmethod
     def is_subset(perms: int, of: int) -> bool:
@@ -51,20 +71,45 @@ class Role(Database.BASE):
 
     @staticmethod
     async def insert_roles():
+        """Seed built-in roles (ТЗ-08). Renames legacy OWNER → SUPERADMIN."""
         roles = {
-            'USER': [Permission.USE],
-            'ADMIN': [Permission.USE, Permission.BROADCAST,
-                      Permission.SETTINGS_MANAGE, Permission.USERS_MANAGE,
-                      Permission.CATALOG_MANAGE, Permission.STATS_VIEW,
-                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE],
-            'OWNER': [Permission.USE, Permission.BROADCAST,
-                      Permission.SETTINGS_MANAGE, Permission.USERS_MANAGE,
-                      Permission.CATALOG_MANAGE, Permission.ADMINS_MANAGE,
-                      Permission.OWN, Permission.STATS_VIEW,
-                      Permission.BALANCE_MANAGE, Permission.PROMO_MANAGE],
+            'USER': [
+                Permission.USE,
+            ],
+            'OPERATOR': [
+                Permission.USE,
+                Permission.USERS_MANAGE,
+                Permission.ORDERS_MANAGE,
+                Permission.TICKETS_MANAGE,
+                Permission.STATS_VIEW,
+            ],
+            'MANAGER': [
+                Permission.USE,
+                Permission.CATALOG_MANAGE,
+                Permission.PROMO_MANAGE,
+                Permission.PROVIDERS_MANAGE,
+                Permission.STATS_VIEW,
+            ],
+            'ADMIN': [
+                Permission.USE,
+                Permission.BROADCAST,
+                Permission.SETTINGS_MANAGE,
+                Permission.USERS_MANAGE,
+                Permission.CATALOG_MANAGE,
+                Permission.STATS_VIEW,
+                Permission.BALANCE_MANAGE,
+                Permission.PROMO_MANAGE,
+                Permission.ORDERS_MANAGE,
+                Permission.PROVIDERS_MANAGE,
+                Permission.PAYMENTS_CONFIG,
+            ],
+            'SUPERADMIN': list(Permission._ALL_BITS),
         }
         default_role = 'USER'
         async with Database().session() as s:
+            legacy = (await s.execute(select(Role).filter_by(name='OWNER'))).scalars().first()
+            if legacy is not None:
+                legacy.name = 'SUPERADMIN'
             for r, perms in roles.items():
                 result = await s.execute(select(Role).filter_by(name=r))
                 role = result.scalars().first()
@@ -150,6 +195,9 @@ class Goods(Database.BASE):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     category_id: Mapped[int] = mapped_column(
         Integer, ForeignKey('categories.id', ondelete="CASCADE"), nullable=False, index=True)
+    fulfillment_type: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default="STOCK", default="STOCK")
+    allows_gift: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false", default=False)
     sale_percent: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
     sale_until: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     category: Mapped["Categories"] = relationship("Categories", back_populates="items", lazy='raise')
@@ -167,11 +215,16 @@ class ItemValues(Database.BASE):
         Integer, ForeignKey('goods.id', ondelete="CASCADE"), nullable=False, index=True)
     value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_infinity: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="AVAILABLE", default="AVAILABLE")
+    reserved_order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('orders.id', ondelete="SET NULL"), nullable=True, index=True)
     item: Mapped["Goods"] = relationship("Goods", back_populates="values", lazy='raise')
 
     __table_args__ = (
         UniqueConstraint('item_id', 'value', name='uq_item_value_per_item'),
         Index('ix_item_values_item_inf', 'item_id', 'is_infinity'),
+        Index('ix_item_values_item_status', 'item_id', 'status'),
     )
 
     def __str__(self):
@@ -227,6 +280,7 @@ class Operations(Database.BASE):
 class Payments(Database.BASE):
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    internal_uuid: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, unique=True, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     external_id: Mapped[str] = mapped_column(String(128), nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(
@@ -258,6 +312,9 @@ class ReferralEarnings(Database.BASE):
         BigInteger, ForeignKey('users.telegram_id', ondelete="CASCADE"), nullable=False, index=True)
     amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
     original_amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("orders.id", ondelete="SET NULL"), nullable=True, unique=True, index=True
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -319,6 +376,8 @@ class PromoCodes(Database.BASE):
     discount_value: Mapped[int] = mapped_column(BigInteger, nullable=False)
     scope: Mapped[str] = mapped_column(String(16), nullable=False, server_default='global')
     max_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # 0 = unlimited
+    max_uses_per_user: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    min_order_cents: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     current_uses: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     category_id: Mapped[Optional[int]] = mapped_column(
@@ -362,9 +421,11 @@ class PromoCodeUsages(Database.BASE):
         Integer, ForeignKey('promo_codes.id', ondelete='CASCADE'), nullable=False)
     user_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False)
+    order_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey('orders.id', ondelete='SET NULL'), nullable=True, index=True
+    )
     used_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
-    __table_args__ = (UniqueConstraint('promo_id', 'user_id', name='uq_promo_usage_per_user'),)
 
 
 class CartItems(Database.BASE):
@@ -426,5 +487,5 @@ class StockSubscriptions(Database.BASE):
 
 
 async def register_models():
-    """Seed the built-in roles (USER/ADMIN/OWNER)."""
+    """Seed the built-in roles (USER/ADMIN/SUPERADMIN/OPERATOR/MANAGER)."""
     await Role.insert_roles()

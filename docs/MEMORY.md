@@ -15,6 +15,387 @@
 
 ---
 
+## 2026-09-17 — Платежи: конфиг только через админку (ТЗ-04)
+
+**Ветка:** `cursor/payments-admin-config-03eb` → `main`
+
+### Сделали
+
+- Ключи Platega / CryptoPay / Stars / Telegram Payments читаются из `payment_gateways.config_json`, не из env.
+- `list_enabled_instruments` отдаёт только инструменты с заполненным конфигом шлюза.
+- Админка: подсказка webhook для `platega`, шаблоны JSON в `bot/payments/gateway_settings.py`.
+- README / `.env.example` — платёжные секреты в SQLAdmin.
+
+### Проверка
+
+- `pytest tests/test_platega_payments.py tests/test_gateway_settings.py`
+
+---
+
+## 2026-09-17 — ТЗ-13: тесты §20, Docker/README, сдача
+
+**Ветка:** `cursor/tests-launch-tz13-03eb` → `main`
+
+### Сделали
+
+- Карта автотестов §20 в `docs/tz/14-tests-launch.md` + таблица результата §21.
+- `tests/test_tz13_coverage_map.py` — регрессия привязки сценариев к тестам.
+- `docs/tz/manual-qa.md` — короткий ручной чеклист staging.
+- README: копейки `BIGINT`, Platega webhook `/webhooks/platega`, RBAC, нет вывода средств, воркеры.
+- `docker-compose.yml`: порт `8080` для Telegram webhook; `.env.example`: Platega + tuning worker.
+
+### Обсуждали
+
+- Отдельный CI workflow в репозитории не добавляли — прогон по README (`pytest` локально/Docker).
+
+### Отвергли
+
+- *Дублировать §20 интеграционными e2e с реальным Platega/Wizard* — *причина:* ТЗ-13, моки в существующих тестах.
+
+### Проверка
+
+- `pytest tests/test_tz13_coverage_map.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-12: фоновые воркеры (fulfillment, expire, hung)
+
+**Ветка:** `cursor/workers-tz12-03eb` → `main`
+
+### Сделали
+
+- `FulfillmentWorker` в `bot/misc/services/fulfillment_worker.py`: периодический poll PROCESSING API-заказов, `expire_due_created_orders`, fail hung PROCESSING (`FULFILLMENT_HUNG_SECONDS`), уведомление покупателя с `delivery_notified_at`.
+- Миграция `f2a3b4c5d6e8`: поля `fulfillment_attempt_count`, `processing_started_at`, `delivery_notified_at` на `orders`.
+- `fulfill_processing_order`: учёт max retry по link/provider → FAILED/REFUNDED.
+- `transition_order`: проставляет `processing_started_at` при входе в PROCESSING.
+- Подключение в `bot/main.py` (start/stop рядом с Recovery/Cleanup).
+- Тесты: `tests/test_workers_tz12.py`.
+
+### Обсуждали
+
+- HTTP по-прежнему внутри одной DB-сессии в `fulfill_processing_order` (handler не await'ит — `safe_create_task`); полный split транзакции — отдельный рефакторинг.
+
+### Отвергли
+
+- *Экспорт `FulfillmentWorker` из `bot.misc.services.__init__`* — *причина:* циклический импорт с `bot.database` при старте Alembic.
+
+### Проверка
+
+- `alembic upgrade head`
+- `pytest tests/test_workers_tz12.py tests/test_fulfillment_tz06.py`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-11: UX бота (каталог, покупка, заказы)
+
+**Ветка:** `cursor/bot-ux-tz11-03eb` → `main`
+
+### Сделали
+
+- Карточка товара: тип выдачи STOCK/API, флаг подарка, цена в ₽ (как раньше через `format_cents_for_ui`).
+- Покупка: подтверждение (`buy_item` → `buy_confirm`); подарок — FSM `waiting_gift_recipient`, проверка регистрации получателя в `buy_item_transaction`.
+- История заказов: `query_user_orders`, handlers `my_orders` / `order_od:`, статусы без сырого ключа до `COMPLETED`.
+- Недостаточный баланс: кнопка пополнения; API-заказ — сообщение «обрабатывается» без ключа.
+- Пополнение: без изменений логики — `list_enabled_instruments()` уже в `replenish_balance_amount`.
+- Тикеты/support: уже из ТЗ-09.
+- `bot/handlers/user/purchase_ui.py` — тонкий слой над `buy_item_transaction`.
+- Тесты: `tests/test_bot_ux_tz11.py`, обновлены payment/shop handler tests.
+
+### Обсуждали
+
+- Подарок только по числовому Telegram ID (username в БД не хранится).
+
+### Отвергли
+
+- *Прямая покупка без confirm одной кнопкой* — *причина:* ТЗ-11 требует подтверждение.
+
+### Проверка
+
+- `pytest tests/test_bot_ux_tz11.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-10: SQLAdmin web-панель (§13)
+
+**Ветка:** `cursor/admin-panel-tz10-03eb` → `main` (ТЗ-09 уже в `main`, PR #14)
+
+### Сделали
+
+- Заказы: `OrderAdmin` (read-only), action **Refund** → `manual_refund_order` + audit.
+- Статистика: `SalesStatsView` — revenue/profit по `profit_cents` для `COMPLETED`.
+- Склад: `StockImportView` → `add_values_bulk`, отчёт added/skipped.
+- Тикеты: расширение SQLAdmin — edit status, `SupportReplyView` → `staff_reply` + Telegram notify.
+- Поставщики: `AuditModelView`, JSON-валидация `config_json` / `request_params` / `result_mapping`.
+- Платежи: gateway secrets masked; `ADMIN_PANEL_OPERATOR=1` скрывает `config_json` в форме.
+- `ADMIN_WEB_OPERATOR_ID` для audit web-действий.
+
+### Чеклист §13 (экран / view)
+
+| Пункт | View |
+|-------|------|
+| Пользователи, баланс | `UserAdmin` |
+| Товары, категории | `GoodsAdmin`, `CategoryAdmin` |
+| Склад + массовая загрузка | `ItemValuesAdmin`, `StockImportView` |
+| API-поставщики, связи | `FulfillmentProviderAdmin`, `GoodsProviderLinkAdmin` |
+| Заказы | `OrderAdmin` |
+| Платежи | `PaymentsAdmin` |
+| Промо, рефералы | `PromoCodeAdmin`, `ReferralEarningsAdmin` |
+| Обращения | `SupportTicketAdmin`, `SupportMessageAdmin`, `SupportReplyView` |
+| Статистика | `SalesStatsView` |
+| Роли | `RoleAdmin` |
+| Аудит | `AuditLogAdmin` |
+| Инструменты/шлюзы | `PaymentInstrumentAdmin`, `PaymentGatewayAdmin` |
+
+### Обсуждали
+
+- SQLAdmin остаётся на env-логин; «OPERATOR без секретов» — через `ADMIN_PANEL_OPERATOR`, не через Telegram-роль в сессии.
+
+### Отвергли
+
+- *Отдельный SPA админки* — *причина:* ТЗ-10.
+
+### Проверка
+
+- `pytest tests/test_admin_panel_tz10.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-09: тикеты поддержки
+
+**Ветка:** смержено в `main` (PR #14)
+
+### Сделали
+
+- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3`).
+- User/admin handlers, базовые SQLAdmin list views; `tests/test_support_tz09.py`.
+
+### Проверка
+
+- `pytest tests/test_support_tz09.py`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
+
+**Ветка:** смержено в `main` (PR #13)
+
+### Сделали
+
+- Новые биты: `ORDERS_MANAGE`, `TICKETS_MANAGE`, `PROVIDERS_MANAGE`, `PAYMENTS_CONFIG`, `AUDIT_VIEW`; `Permission.all_bits()`.
+- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN, SUPERADMIN; rename `OWNER` → `SUPERADMIN`.
+- Миграция `d8e9f0a1b2c3`; `bot/database/role_names.py`; тесты `tests/test_rbac_tz08.py`.
+
+### Матрица (биты)
+
+| Роль | Назначение |
+|------|------------|
+| USER | USE |
+| OPERATOR | USE, USERS, ORDERS, TICKETS, STATS |
+| MANAGER | USE, CATALOG, PROMOS, PROVIDERS, STATS |
+| ADMIN | USE, BROADCAST, SETTINGS, USERS, CATALOG, STATS, BALANCE, PROMOS, ORDERS, PROVIDERS, PAYMENTS |
+| SUPERADMIN | все биты включая ADMINS, OWN, AUDIT |
+
+### Проверка
+
+- `pytest tests/test_rbac_tz08.py tests/test_role_management.py`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-07: промокоды и реферал на заказах
+
+**Ветка:** смержено в `main` (PR #12)
+
+### Сделали
+
+- Миграция `c7d8e9f0a1b2`: `min_order_cents`, `max_uses_per_user`, `promo_code_usages.order_id`, снят `uq_promo_usage_per_user`, unique `referral_earnings.order_id`.
+- `promo_rule_error` / `record_promo_usage` / `count_promo_usages_for_user`; повторная проверка лимитов под lock промо.
+- Корзина и redeem через `record_promo_usage`; buy_item — usage с `order_id` после создания заказа (ТЗ-06).
+- Реферал: `credit_referral_for_order` / `reverse_referral_for_order` на `Order.COMPLETED` / `REFUNDED`; убрано с top-up в `process_payment_with_referral`.
+- i18n: тексты «с покупок», не «с пополнений»; SQLAdmin поля промо; тесты `tests/test_promo_referral_tz07.py`.
+
+### Обсуждали
+
+- Параллельный race last-use промо на SQLite in-memory не сериализует `FOR UPDATE` — отдельный skipped-тест; на Postgres ожидается один победитель.
+
+### Отвергли
+
+- *Реферал с пополнения* — *причина:* ТЗ-07, начисление только с завершённого заказа.
+- *Ранний increment промо в buy_item (как до ТЗ-06 в main)* — *причина:* usage должен идти с `order_id` после `begin_paid_order`.
+
+### Проверка
+
+- `pytest tests/test_promo_referral_tz07.py`
+- `pytest` (полный набор)
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — ТЗ-06: checkout и fulfillment (заказ, баланс, STOCK/API)
+
+**Ветка:** `cursor/fulfillment-worker-tz06-03eb` → `main`
+
+### Сделали
+
+- `bot/misc/services/fulfillment.py`: `begin_paid_order`, `complete_stock_order`, `fulfill_processing_order`, auto-refund `FAILED`→`REFUNDED`, gift → `BoughtGoods.buyer_id` получателя.
+- `buy_item_transaction`: заказ + списание; STOCK завершается в транзакции (`COMPLETED`); API → `PROCESSING` + фоновый `fulfill_processing_order_by_id` (без долгого await в handler).
+- `select_primary_link_for_session` в `bot/providers/links.py`.
+- Тесты `tests/test_fulfillment_tz06.py`; `_checkout_lock` для SQLite StaticPool при конкурентных покупках.
+
+### Обсуждали
+
+- **Корзина:** одна строка = один `Order` — в этом PR пока только `buy_item`; `checkout_cart_transaction` остаётся на legacy-пути (без Order), без регрессии STOCK.
+- Реферал на `COMPLETED` — ТЗ-07; retry/backoff воркера — ТЗ-12.
+
+### Отвергли
+
+- *Синхронный await Wizard в handler* — *причина:* ТЗ-06/12; API через task после commit.
+
+### Проверка
+
+- `pytest tests/test_fulfillment_tz06.py`
+- `pytest` (полный набор; известный fail `test_concurrent_purchases_do_not_overdraw` на SQLite без lock — смягчён lock для buy_item).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-16 — ТЗ-05: поставщики цифровых товаров (Wizard, fake, links)
+
+**Ветка:** `cursor/fulfillment-providers-tz05-03eb` → `main`
+
+### Сделали
+
+- Пакет `bot/providers/`: протокол `DigitalGoodsProvider`, DTO, ошибки `ProviderRetryableError` / `ProviderFatalError`, маппинг `result_mapping` → ключ выдачи.
+- Адаптеры `FakeProvider` (success / timeout / fatal / идемпотентность по ключу) и `WizardProvider` (REST: `GET /v1/products/{id}`, `POST /v1/orders` с `Idempotency-Key`, `GET /v1/orders/{id}`, cancel).
+- Реестр `build_provider(code, config_json)`; сервис `create_external_order` — один вызов create, повтор по уже сохранённому `provider_external_order_id` + `fulfillment_payload` без второго HTTP.
+- Модели `FulfillmentProvider`, `GoodsProviderLink`; миграция `b5c6d7e8f9a0_fulfillment_providers_tz05.py` (сид `wizard` / `fake`; FK `orders.provider_id` → `fulfillment_providers`).
+- `select_primary_link`, `validate_provider_link` (fake / skip_catalog_validation / get_product).
+- SQLAdmin: `FulfillmentProviderAdmin`, `GoodsProviderLinkAdmin`.
+- Тесты `tests/test_providers_tz05.py`; сид в `tests/conftest` через `fulfillment_seed`.
+
+### Обсуждали
+
+- Wizard API: [api.wizard-bot.com/docs](https://api.wizard-bot.com/docs/) — `https://api.wizard-bot.com/v1`, заголовок `X-API-KEY`, `POST /orders/create` (`recipient`, `quantity`, `category` stars|premium), `GET /orders/get/{id}`; инструкция `docs/providers/WIZARD.md`.
+- Полный retry-loop и вызов `create_external_order` из воркера — **ТЗ-06** / **ТЗ-12**; здесь один HTTP-запрос и классификация ошибок.
+- Платёжный `Payments.provider` не трогали — fulfillment отдельно от Platega (ТЗ-04).
+
+### Отвергли
+
+- *Повторный create при ретрае через новый in-memory Fake без состояния* — *причина:* на ретрае возвращаем заказ из полей `Order`, если payload уже записан; иначе — `get_order_status` (для stateful провайдеров).
+
+### Проверка
+
+- `pytest tests/test_providers_tz05.py` — 7 passed.
+- `pytest` — 1000 passed; 1 failed — прежний `test_concurrent_purchases_do_not_overdraw` (SQLite).
+- Handlers: нет импортов из `bot/providers`.
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-16 — ТЗ-04: платежи, инструменты, Platega
+
+**Ветка:** `cursor/payments-platega-tz04-03eb` → `main` (смержено в `main`, PR #8)
+
+### Сделали
+
+- Модели `PaymentGateway`, `PaymentInstrument`; `Payments.internal_uuid`.
+- Миграция `a4b5c6d7e8f9` + сид «Карта / МИР» → Platega (ключи из env).
+- `bot/payments/`: `process_payment_topup` (без реферала), адаптер Platega (`create_payment`, `fetch_status`, webhook headers), `create_topup_via_instrument`, список инструментов из БД.
+- Webhook `POST /webhooks/platega` на Starlette (рядом с админкой).
+- Handlers: клавиатура методов из БД (`pay_inst_{code}`), ветка Platega + проверка оплаты; CryptoPay manual check → `process_payment_topup`.
+- Recovery: pending `platega` опрашивается `fetch_status`.
+- SQLAdmin: gateways/instruments; тесты `tests/test_platega_payments.py`.
+
+### Обсуждали
+
+- Stars/Telegram fiat остаются через gateway-код в handler (инструменты в БД, логика прежняя).
+- Heleket — gateway disabled, без API в v1.
+
+### Отвергли
+
+- *Реферал с пополнения в ТЗ-04* — *причина:* `process_payment_topup` без referral; реферал с заказа — ТЗ-07.
+
+### Проверка
+
+- `pytest tests/test_platega_payments.py`
+- `alembic upgrade head`; env: `PLATEGA_MERCHANT_ID`, `PLATEGA_SECRET`; callback URL в ЛК Platega → `https://<host>/webhooks/platega`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-16 — ТЗ-03: каталог и склад (fulfillment, резерв, gift)
+
+**Ветка:** `cursor/catalog-stock-tz03-03eb` → `main`
+
+### Сделали
+
+- Пакет `bot/catalog/`: `FulfillmentType`, статусы `StockUnitStatus`, `consume_stock_units`, `reserve_stock_units`, `release_stock_reservations`, проверка `gift_not_allowed`.
+- Модели: `Goods.fulfillment_type`, `Goods.allows_gift`; `ItemValues.status`, `ItemValues.reserved_order_id` (FK на `orders`).
+- Миграция `f3a4b5c6d7e8_catalog_stock_tz03.py`.
+- Покупка и корзина используют `consume_stock_units` (атомарный delete с `status=AVAILABLE`; на Postgres — `SKIP LOCKED` при выборе).
+- При переходе заказа в `EXPIRED`/`FAILED` — `release_stock_reservations`.
+- Остаток в витрине считает только AVAILABLE (+ infinity).
+- Тесты `tests/test_catalog_stock.py` по критериям ТЗ-03.
+- SQLAdmin: колонки fulfillment / gift / status.
+
+### Обсуждали
+
+- Резерв до оплаты по TTL заказа `CREATED`: API `reserve_stock_units` готов; `buy_item_transaction` по-прежнему мгновенное списание со склада (без заказа) — полный order-flow в ТЗ-06.
+- Подарок: только серверная проверка `gift_recipient_telegram_id` + `allows_gift`; UI — ТЗ-11.
+
+### Отвергли
+
+- *Явный статус SOLD с хранением строки* — *причина:* сохранили прежнее удаление finite-ключа при продаже; RESERVED только для TTL-резерва.
+
+### Проверка
+
+- `pytest tests/test_catalog_stock.py` — все зелёные.
+- `pytest` — 993 passed; 1 failed — прежний `test_concurrent_purchases_do_not_overdraw` на SQLite (гонка баланса без `FOR UPDATE`).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-16 — PR #5: окружение Cloud Agent (Python 3.11, Postgres, Redis)
 
 **Ветка:** `cursor/setup-dev-environment-e567` → `main`  
@@ -118,7 +499,6 @@
 - Исправление UX: карточка товара и корзина оба через `format_cents_for_ui`; `create_item` / `replace_item_stock_and_meta` принимают **рубли** и конвертируют внутри.
 - Профиль пользователя (`profile`): баланс и сумма пополнений через `format_cents_for_ui`.
 - SQLAdmin `Users`: баланс в списке/форме в рублях, при сохранении `rub_to_cents`.
-- SQLAdmin `Products` (и промо fixed/balance): цена/сумма в рублях в форме, копейки в БД; списки покупок/операций/платежей — отображение в рублях.
 - Товары с ошибочной ценой после миграции — пересохранить цену в админке.
 - Миграция: `alembic upgrade head` на Postgres после деплоя.
 

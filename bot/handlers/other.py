@@ -41,12 +41,11 @@ async def get_bot_info(event) -> str:
     return me.username
 
 
-def _any_payment_method_enabled() -> bool:
-    """Is there at least one enabled payment method?"""
-    cryptopay_ok = bool(EnvKeys.CRYPTO_PAY_TOKEN)
-    tg_stars_ok = bool(EnvKeys.STARS_PER_VALUE)
-    tg_pay_ok = bool(EnvKeys.TELEGRAM_PROVIDER_TOKEN)
-    return cryptopay_ok or tg_stars_ok or tg_pay_ok
+async def payment_methods_available() -> bool:
+    """At least one enabled, configured payment instrument (SQLAdmin / БД)."""
+    from bot.payments.service import any_instrument_enabled
+
+    return await any_instrument_enabled()
 
 
 def _parse_channel_username() -> str | None:

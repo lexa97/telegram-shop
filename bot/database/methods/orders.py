@@ -9,6 +9,8 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from bot.catalog.stock import _use_skip_locked
+
 from bot.database.methods.read import invalidate_user_cache
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.models.main import Operations, User
@@ -107,7 +109,16 @@ async def transition_order(
         raise OrderTransitionError(f"illegal:{from_status}->{to_status}")
 
     order.status = to_status
+    if to_status == OrderStatus.PROCESSING and order.processing_started_at is None:
+        order.processing_started_at = now or datetime.datetime.now(datetime.timezone.utc)
+    if to_status in (OrderStatus.EXPIRED, OrderStatus.FAILED):
+        from bot.catalog.stock import release_stock_reservations
+
+        await release_stock_reservations(session, order.id)
     if to_status == OrderStatus.COMPLETED:
+        from bot.misc.services.referral import credit_referral_for_order
+
+        await credit_referral_for_order(session, order)
         order.profit_cents = compute_profit_cents(
             order.total_cents,
             order.cost_cents,
@@ -115,6 +126,10 @@ async def transition_order(
             order.referral_amount_cents,
         )
         order.completed_at = now or datetime.datetime.now(datetime.timezone.utc)
+    if to_status == OrderStatus.REFUNDED:
+        from bot.misc.services.referral import reverse_referral_for_order
+
+        await reverse_referral_for_order(session, order)
     await _append_history(session, order, from_status, to_status, actor_id)
     return order
 
@@ -231,6 +246,17 @@ async def manual_refund_order(
         )
     )
 
+    from bot.database.methods.audit import log_audit
+
+    await log_audit(
+        "order_refund",
+        user_id=operator_id,
+        resource_type="Order",
+        resource_id=str(order.id),
+        details=f"total_cents={order.total_cents}",
+        session=session,
+    )
+
     await transition_order(session, order, OrderStatus.REFUNDED, actor_id=operator_id)
     safe_create_task(invalidate_user_cache(order.user_id))
     return order, True
@@ -240,3 +266,52 @@ async def get_order(session: AsyncSession, order_id: int) -> Optional[Order]:
     return (
         await session.execute(select(Order).where(Order.id == order_id))
     ).scalar_one_or_none()
+
+
+async def expire_due_created_orders(
+    session: AsyncSession,
+    *,
+    now: Optional[datetime.datetime] = None,
+    limit: int = 50,
+) -> int:
+    """CREATED past ``expires_at`` → EXPIRED (+ stock release)."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    stmt = (
+        select(Order)
+        .where(
+            Order.status == OrderStatus.CREATED,
+            Order.expires_at.isnot(None),
+            Order.expires_at <= now,
+        )
+        .order_by(Order.id)
+        .limit(limit)
+    )
+    if _use_skip_locked(session):
+        stmt = stmt.with_for_update(skip_locked=True)
+    else:
+        stmt = stmt.with_for_update()
+
+    rows = (await session.execute(stmt)).scalars().all()
+    for order in rows:
+        await transition_order(session, order, OrderStatus.EXPIRED, actor_id=None, now=now)
+    return len(rows)
+
+
+async def list_processing_api_order_ids(
+    session: AsyncSession,
+    *,
+    limit: int = 20,
+) -> list[int]:
+    """PROCESSING API orders for fulfillment worker (SKIP LOCKED when supported)."""
+    stmt = (
+        select(Order.id)
+        .where(
+            Order.status == OrderStatus.PROCESSING,
+            Order.delivery_type == DeliveryType.API,
+        )
+        .order_by(Order.id)
+        .limit(limit)
+    )
+    if _use_skip_locked(session):
+        stmt = stmt.with_for_update(skip_locked=True)
+    return list((await session.execute(stmt)).scalars().all())

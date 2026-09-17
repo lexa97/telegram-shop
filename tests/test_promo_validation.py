@@ -25,6 +25,7 @@ def _past(hours: int = 1) -> datetime:
 
 async def _make_promo(code, discount_type="percent", value="10", *, active=True,
                       expires_at=None, max_uses=0, current_uses=0,
+                      min_order_cents=0, max_uses_per_user=1,
                       category_id=None, item_id=None, scope=None):
     if discount_type == "percent":
         stored = int(value)
@@ -34,6 +35,8 @@ async def _make_promo(code, discount_type="percent", value="10", *, active=True,
         s.add(PromoCodes(
             code=code.upper(), discount_type=discount_type,
             discount_value=stored, max_uses=max_uses,
+            min_order_cents=min_order_cents,
+            max_uses_per_user=max_uses_per_user,
             current_uses=current_uses, is_active=active, expires_at=expires_at,
             category_id=category_id, item_id=item_id,
             scope=scope or promo_scope_for(category_id, item_id),
