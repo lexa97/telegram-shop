@@ -17,7 +17,8 @@
 
 ## 2026-09-17 — Каркас интеграционных тестов (сценарии → pytest)
 
-**Ветка:** `cursor/integration-tests-scaffold-987a` → `main`
+**Ветка:** `cursor/integration-tests-scaffold-987a` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/11
 
 ### Сделали
 
