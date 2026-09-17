@@ -17,7 +17,7 @@
 
 ## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
 
-**Ветка:** `cursor/rbac-tz08-03eb` → `main` (поверх ТЗ-07 в `main`, PR #12)
+**Ветка:** `cursor/rbac-tz08-03eb` → `main` (PR #13, смержено)
 
 ### Сделали
 
@@ -53,6 +53,26 @@
 ### Graphify
 
 - После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
+## 2026-09-17 — PR #14: ТЗ-09 — тикеты поддержки
+
+**Ветка:** `cursor/support-tickets-tz09-03eb` → `main` (влито в ветку ТЗ-10)  
+**PR:** https://github.com/lexa97/telegram-shop/pull/14
+
+### Сделали
+
+- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3` после merge с ТЗ-08).
+- Сервис, user/admin handlers, SQLAdmin list views; i18n; `tests/test_support_tz09.py`.
+
+### Обсуждали
+
+- Один активный тикет на пользователя; in-chat + SQLAdmin list в ТЗ-09, ответ staff из web — ТЗ-10.
+
+### Проверка
+
+- `pytest tests/test_support_tz09.py`
 
 ---
 
