@@ -22,9 +22,7 @@ class TestCurrencyToStars:
         (1.0, 50, 50),        # already integral
     ])
     def test_conversion(self, rate, amount, expected):
-        with patch('bot.misc.services.payment.EnvKeys') as env:
-            env.STARS_PER_VALUE = rate
-            assert currency_to_stars(amount) == expected
+        assert currency_to_stars(amount, rate) == expected
 
 
 class TestMinorUnitsFor:
@@ -48,9 +46,10 @@ class TestSendStarsInvoice:
         bot = AsyncMock()
 
         with patch('bot.misc.services.payment.EnvKeys') as env:
-            env.STARS_PER_VALUE = 0.91
             env.PAY_CURRENCY = "RUB"
-            await send_stars_invoice(bot, chat_id=123, amount=100)
+            await send_stars_invoice(
+                bot, chat_id=123, amount=100, stars_per_value=0.91
+            )
 
         bot.send_invoice.assert_called_once()
         call_kwargs = bot.send_invoice.call_args[1]
@@ -62,9 +61,10 @@ class TestSendStarsInvoice:
         bot = AsyncMock()
 
         with patch('bot.misc.services.payment.EnvKeys') as env:
-            env.STARS_PER_VALUE = 0.91
             env.PAY_CURRENCY = "RUB"
-            await send_stars_invoice(bot, chat_id=123, amount=100)
+            await send_stars_invoice(
+                bot, chat_id=123, amount=100, stars_per_value=0.91
+            )
 
         prices = bot.send_invoice.call_args[1]['prices']
         assert prices[0].amount == math.ceil(100 * 0.91)
@@ -76,9 +76,10 @@ class TestSendFiatInvoice:
         bot = AsyncMock()
 
         with patch('bot.misc.services.payment.EnvKeys') as env:
-            env.TELEGRAM_PROVIDER_TOKEN = "test_token"
             env.PAY_CURRENCY = "RUB"
-            await send_fiat_invoice(bot=bot, chat_id=456, amount=200)
+            await send_fiat_invoice(
+                bot=bot, chat_id=456, amount=200, provider_token="test_token"
+            )
 
         bot.send_invoice.assert_called_once()
         call_kwargs = bot.send_invoice.call_args[1]
@@ -91,9 +92,10 @@ class TestSendFiatInvoice:
         bot = AsyncMock()
 
         with patch('bot.misc.services.payment.EnvKeys') as env:
-            env.TELEGRAM_PROVIDER_TOKEN = "test_token"
             env.PAY_CURRENCY = "JPY"
-            await send_fiat_invoice(bot=bot, chat_id=456, amount=200)
+            await send_fiat_invoice(
+                bot=bot, chat_id=456, amount=200, provider_token="test_token"
+            )
 
         prices = bot.send_invoice.call_args[1]['prices']
         # JPY has no minor units: 200 * 1 = 200
@@ -102,16 +104,14 @@ class TestSendFiatInvoice:
     async def test_missing_provider_token_raises(self):
         bot = AsyncMock()
 
-        with patch('bot.misc.services.payment.EnvKeys') as env:
-            env.TELEGRAM_PROVIDER_TOKEN = ""
-            with pytest.raises(RuntimeError, match="TELEGRAM_PROVIDER_TOKEN"):
-                await send_fiat_invoice(bot=bot, chat_id=456, amount=200)
+        with pytest.raises(RuntimeError, match="telegram_provider_token"):
+            await send_fiat_invoice(bot=bot, chat_id=456, amount=200, provider_token="")
 
 
 class TestCryptoPayAPI:
 
     async def test_api_error_raises(self):
-        api = CryptoPayAPI()
+        api = CryptoPayAPI("test_token")
 
         mock_response = AsyncMock()
         mock_response.json = AsyncMock(return_value={

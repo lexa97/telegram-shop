@@ -363,7 +363,7 @@ class TestStarsAmountFromPayload:
 
         await user_factory(telegram_id=400100 + requested, balance=0)
 
-        stars = currency_to_stars(requested)
+        stars = currency_to_stars(requested, 0.91)
         assert stars == math.ceil(requested * 0.91)
 
         msg = make_message(text="", user_id=400100 + requested)

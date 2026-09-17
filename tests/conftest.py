@@ -116,9 +116,13 @@ def setup_test_database():
         from bot.database.models.main import Role
         await Role.insert_roles()
         from bot.database.methods.fulfillment_seed import seed_fulfillment_providers
-        from bot.database.methods.payment_config import seed_default_payment_config
+        from bot.database.methods.payment_config import (
+            seed_default_payment_config,
+            seed_test_payment_credentials,
+        )
         await seed_fulfillment_providers()
         await seed_default_payment_config()
+        await seed_test_payment_credentials()
 
     asyncio.run(_setup())
 
@@ -135,9 +139,13 @@ async def db_cleanup(setup_test_database):
     (except roles which are session-scoped).
     """
     from bot.database.methods.fulfillment_seed import seed_fulfillment_providers
-    from bot.database.methods.payment_config import seed_default_payment_config
+    from bot.database.methods.payment_config import (
+        seed_default_payment_config,
+        seed_test_payment_credentials,
+    )
     await seed_fulfillment_providers()
     await seed_default_payment_config()
+    await seed_test_payment_credentials()
 
     yield
 

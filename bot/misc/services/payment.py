@@ -13,18 +13,22 @@ from bot.i18n import localize
 ZERO_DEC_CURRENCIES = {"JPY", "KRW"}
 
 
-def currency_to_stars(amount_rub: int) -> int:
+def currency_to_stars(amount_rub: int, stars_per_value: float) -> int:
     """
     Convert currency amount to integer number of Telegram Stars.
     round up (ceil) to avoid undercharging.
     """
-    return int(math.ceil(float(amount_rub) * EnvKeys.STARS_PER_VALUE))
+    if stars_per_value <= 0:
+        return 0
+    return int(math.ceil(float(amount_rub) * stars_per_value))
 
 
 async def send_stars_invoice(
         bot: Bot,
         chat_id: int,
         amount: int,
+        *,
+        stars_per_value: float,
         title: Optional[str] = None,
         description: Optional[str] = None,
         payload_extra: Optional[dict] = None,
@@ -33,7 +37,9 @@ async def send_stars_invoice(
     Send Telegram Stars invoice (currency='XTR', provider_token='').
     LabeledPrice.amount for Stars is a whole number of stars.
     """
-    stars = currency_to_stars(amount)
+    stars = currency_to_stars(amount, stars_per_value)
+    if stars <= 0:
+        raise RuntimeError("stars_not_configured")
 
     prices = [LabeledPrice(label=localize("payments.invoice.label.stars", stars=stars), amount=stars)]
     payload = {
@@ -81,6 +87,7 @@ async def send_fiat_invoice(
         bot: Bot,
         chat_id: int,
         amount: int,
+        provider_token: str,
         title: Optional[str] = None,
         description: Optional[str] = None,
 ):
@@ -88,9 +95,8 @@ async def send_fiat_invoice(
     Send invoice via Telegram Payments (fiat provider).
     `amount` is given in major units (e.g., RUB, USD).
     """
-    provider_token = EnvKeys.TELEGRAM_PROVIDER_TOKEN
     if not provider_token:
-        raise RuntimeError("TELEGRAM_PROVIDER_TOKEN is not set")
+        raise RuntimeError("telegram_provider_token_not_set")
 
     currency = (getattr(EnvKeys, "PAY_CURRENCY", None) or "RUB").upper()
     multiplier = _minor_units_for(currency)
@@ -171,8 +177,10 @@ class CryptoPayAPI:
     _timeout = aiohttp.ClientTimeout(total=30)
     _session: Optional[aiohttp.ClientSession] = None
 
-    def __init__(self):
-        self.token = EnvKeys.CRYPTO_PAY_TOKEN
+    def __init__(self, token: str | None = None):
+        self.token = (token or "").strip()
+        if not self.token:
+            raise RuntimeError("cryptopay_api_token_not_set")
         self.base_url = "https://pay.crypt.bot/api"
         self.circuit_breaker = _crypto_circuit_breaker
 

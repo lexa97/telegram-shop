@@ -1,37 +1,35 @@
 """Seed and read payment instruments (tests + dev)."""
 
 import json
-import os
 
 from sqlalchemy import select
 
 from bot.database import Database
 from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
+from bot.payments.gateway_settings import default_config_json
 
 
 async def seed_default_payment_config() -> None:
-    """Idempotent seed for gateways/instruments (pytest + fresh DB)."""
+    """Idempotent seed for gateways/instruments (pytest + fresh DB). Credentials live in admin UI."""
     async with Database().session() as s:
         existing = (await s.execute(select(PaymentGateway.id).limit(1))).scalar()
         if existing:
             return
 
-        platega_cfg = json.dumps(
-            {
-                "merchant_id": os.getenv("PLATEGA_MERCHANT_ID", "test-merchant"),
-                "api_secret": os.getenv("PLATEGA_SECRET", "test-secret"),
-                "payment_method": 11,
-                "base_url": os.getenv("PLATEGA_BASE_URL", "https://app.platega.io"),
-                "return_url": "https://t.me",
-                "failed_url": "https://t.me",
-            }
-        )
+        gateway_specs = [
+            ("platega", True),
+            ("cryptopay", True),
+            ("stars", True),
+            ("telegram_fiat", True),
+            ("heleket", False),
+        ]
         gateways = [
-            PaymentGateway(code="platega", enabled=True, config_json=platega_cfg),
-            PaymentGateway(code="cryptopay", enabled=True, config_json="{}"),
-            PaymentGateway(code="stars", enabled=True, config_json="{}"),
-            PaymentGateway(code="telegram_fiat", enabled=True, config_json="{}"),
-            PaymentGateway(code="heleket", enabled=False, config_json="{}"),
+            PaymentGateway(
+                code=code,
+                enabled=enabled,
+                config_json=default_config_json(code),
+            )
+            for code, enabled in gateway_specs
         ]
         s.add_all(gateways)
         await s.flush()
@@ -50,7 +48,7 @@ async def seed_default_payment_config() -> None:
                 PaymentInstrument(
                     code="cryptopay",
                     title="CryptoPay",
-                    enabled=bool(os.getenv("CRYPTO_PAY_TOKEN")),
+                    enabled=False,
                     sort_order=20,
                     currency="RUB",
                     gateway_id=by_code["cryptopay"],
@@ -58,7 +56,7 @@ async def seed_default_payment_config() -> None:
                 PaymentInstrument(
                     code="stars",
                     title="Telegram Stars",
-                    enabled=float(os.getenv("STARS_PER_VALUE", "0.91") or 0) > 0,
+                    enabled=False,
                     sort_order=30,
                     currency="RUB",
                     gateway_id=by_code["stars"],
@@ -66,10 +64,50 @@ async def seed_default_payment_config() -> None:
                 PaymentInstrument(
                     code="telegram_fiat",
                     title="Telegram Payments",
-                    enabled=bool(os.getenv("TELEGRAM_PROVIDER_TOKEN")),
+                    enabled=False,
                     sort_order=40,
                     currency="RUB",
                     gateway_id=by_code["telegram_fiat"],
                 ),
             ]
         )
+
+
+async def seed_test_payment_credentials() -> None:
+    """Pytest: enable gateways with fake credentials (no env)."""
+    async with Database().session() as s:
+        platega = (
+            await s.execute(select(PaymentGateway).where(PaymentGateway.code == "platega"))
+        ).scalar_one()
+        platega.config_json = json.dumps(
+            {
+                "merchant_id": "test-merchant",
+                "api_secret": "test-secret",
+                "payment_method": 11,
+                "base_url": "https://app.platega.io",
+                "return_url": "https://t.me",
+                "failed_url": "https://t.me",
+            }
+        )
+        platega.enabled = True
+
+        cryptopay = (
+            await s.execute(select(PaymentGateway).where(PaymentGateway.code == "cryptopay"))
+        ).scalar_one()
+        cryptopay.config_json = json.dumps({"api_token": "test_token"})
+        cryptopay.enabled = True
+
+        stars = (
+            await s.execute(select(PaymentGateway).where(PaymentGateway.code == "stars"))
+        ).scalar_one()
+        stars.config_json = json.dumps({"stars_per_value": 0.91})
+        stars.enabled = True
+
+        fiat = (
+            await s.execute(select(PaymentGateway).where(PaymentGateway.code == "telegram_fiat"))
+        ).scalar_one()
+        fiat.config_json = json.dumps({"provider_token": "test_provider"})
+        fiat.enabled = True
+
+        for inst in (await s.execute(select(PaymentInstrument))).scalars().all():
+            inst.enabled = True

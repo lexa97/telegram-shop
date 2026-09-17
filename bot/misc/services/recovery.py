@@ -103,8 +103,16 @@ class RecoveryManager:
         p_currency = payment['currency'] if isinstance(payment, dict) else payment.currency
 
         try:
-            if p_provider == "cryptopay" and EnvKeys.CRYPTO_PAY_TOKEN:
-                crypto = CryptoPayAPI()
+            if p_provider == "cryptopay":
+                from bot.payments.gateway_settings import (
+                    cryptopay_api_token,
+                    get_configured_gateway,
+                )
+
+                gw = await get_configured_gateway("cryptopay")
+                if not gw:
+                    return
+                crypto = CryptoPayAPI(cryptopay_api_token(gw))
                 info = await crypto.get_invoice(p_external_id)
 
                 if info.get("status") == "paid":

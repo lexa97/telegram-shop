@@ -21,6 +21,13 @@ def web_panel_operator_id() -> int:
         return 0
 
 
+def format_gateway_code(model: Any, _name: str) -> str:
+    code = getattr(model, "code", "") or ""
+    if code == "platega":
+        return f"{code} (webhook POST /webhooks/platega на порту панели)"
+    return code
+
+
 def mask_gateway_config(model: Any, _name: str) -> str:
     if EnvKeys.admin_panel_operator_mode():
         return "••••••••"
@@ -28,6 +35,20 @@ def mask_gateway_config(model: Any, _name: str) -> str:
     if len(raw) <= 80:
         return raw
     return raw[:77] + "..."
+
+
+def gateway_config_form_help(model: Any) -> str:
+    from bot.payments.gateway_settings import GATEWAY_CONFIG_SCHEMAS, default_config_json
+
+    code = getattr(model, "code", "") or ""
+    schema = GATEWAY_CONFIG_SCHEMAS.get(code, {})
+    example = default_config_json(code)
+    lines = [f"Шаблон для `{code}`:", example]
+    if schema:
+        lines.append("Поля:")
+        for key, hint in schema.items():
+            lines.append(f"  • {key}: {hint}")
+    return "\n".join(lines)
 
 
 def format_order_money(model: Any, name: str) -> str:
