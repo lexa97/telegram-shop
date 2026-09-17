@@ -17,14 +17,14 @@
 
 ## 2026-09-17 — ТЗ-10: SQLAdmin web-панель (§13)
 
-**Ветка:** `cursor/admin-panel-tz10-03eb` → `main` (включает merge ТЗ-09)
+**Ветка:** `cursor/admin-panel-tz10-03eb` → `main` (ТЗ-09 уже в `main`, PR #14)
 
 ### Сделали
 
 - Заказы: `OrderAdmin` (read-only), action **Refund** → `manual_refund_order` + audit.
 - Статистика: `SalesStatsView` — revenue/profit по `profit_cents` для `COMPLETED`.
 - Склад: `StockImportView` → `add_values_bulk`, отчёт added/skipped.
-- Тикеты: list/edit status + `SupportReplyView` → `staff_reply` + Telegram notify.
+- Тикеты: расширение SQLAdmin — edit status, `SupportReplyView` → `staff_reply` + Telegram notify.
 - Поставщики: `AuditModelView`, JSON-валидация `config_json` / `request_params` / `result_mapping`.
 - Платежи: gateway secrets masked; `ADMIN_PANEL_OPERATOR=1` скрывает `config_json` в форме.
 - `ADMIN_WEB_OPERATOR_ID` для audit web-действий.
@@ -65,17 +65,34 @@
 
 ---
 
+## 2026-09-17 — ТЗ-09: тикеты поддержки
+
+**Ветка:** смержено в `main` (PR #14)
+
+### Сделали
+
+- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3`).
+- User/admin handlers, базовые SQLAdmin list views; `tests/test_support_tz09.py`.
+
+### Проверка
+
+- `pytest tests/test_support_tz09.py`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
 
-**Ветка:** `cursor/rbac-tz08-03eb` → `main` (PR #13, смержено)
+**Ветка:** смержено в `main` (PR #13)
 
 ### Сделали
 
 - Новые биты: `ORDERS_MANAGE`, `TICKETS_MANAGE`, `PROVIDERS_MANAGE`, `PAYMENTS_CONFIG`, `AUDIT_VIEW`; `Permission.all_bits()`.
-- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN (без `ADMINS_MANAGE`/`OWN`), SUPERADMIN (все биты); rename `OWNER` → `SUPERADMIN`.
-- Миграция `d8e9f0a1b2c3` (revises `c7d8e9f0a1b2`); `bot/database/role_names.py`; защита SUPERADMIN в assign/block.
-- Консоль бота: shop-меню для `STATS_VIEW` без каталога (OPERATOR); audit `order_refund` в `manual_refund_order`.
-- Тесты `tests/test_rbac_tz08.py`, обновлены role/admin tests.
+- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN, SUPERADMIN; rename `OWNER` → `SUPERADMIN`.
+- Миграция `d8e9f0a1b2c3`; `bot/database/role_names.py`; тесты `tests/test_rbac_tz08.py`.
 
 ### Матрица (биты)
 
@@ -87,42 +104,13 @@
 | ADMIN | USE, BROADCAST, SETTINGS, USERS, CATALOG, STATS, BALANCE, PROMOS, ORDERS, PROVIDERS, PAYMENTS |
 | SUPERADMIN | все биты включая ADMINS, OWN, AUDIT |
 
-### Обсуждали
-
-- SQLAdmin по-прежнему на env-логин/пароль; in-chat меню режется по битам Telegram-роли.
-
-### Отвергли
-
-- *Casbin / внешний IAM* — *причина:* ТЗ-08.
-
 ### Проверка
 
 - `pytest tests/test_rbac_tz08.py tests/test_role_management.py`
-- `pytest`
 
 ### Graphify
 
 - После merge: `./devtools/graphify/refresh-after-merge.sh`.
-
----
-
-## 2026-09-17 — PR #14: ТЗ-09 — тикеты поддержки
-
-**Ветка:** `cursor/support-tickets-tz09-03eb` → `main` (влито в ветку ТЗ-10)  
-**PR:** https://github.com/lexa97/telegram-shop/pull/14
-
-### Сделали
-
-- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3` после merge с ТЗ-08).
-- Сервис, user/admin handlers, SQLAdmin list views; i18n; `tests/test_support_tz09.py`.
-
-### Обсуждали
-
-- Один активный тикет на пользователя; in-chat + SQLAdmin list в ТЗ-09, ответ staff из web — ТЗ-10.
-
-### Проверка
-
-- `pytest tests/test_support_tz09.py`
 
 ---
 
