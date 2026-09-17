@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-09-17 — ТЗ-13: тесты §20, Docker/README, сдача
+
+**Ветка:** `cursor/tests-launch-tz13-03eb` → `main`
+
+### Сделали
+
+- Карта автотестов §20 в `docs/tz/14-tests-launch.md` + таблица результата §21.
+- `tests/test_tz13_coverage_map.py` — регрессия привязки сценариев к тестам.
+- `docs/tz/manual-qa.md` — короткий ручной чеклист staging.
+- README: копейки `BIGINT`, Platega webhook `/webhooks/platega`, RBAC, нет вывода средств, воркеры.
+- `docker-compose.yml`: порт `8080` для Telegram webhook; `.env.example`: Platega + tuning worker.
+
+### Обсуждали
+
+- Отдельный CI workflow в репозитории не добавляли — прогон по README (`pytest` локально/Docker).
+
+### Отвергли
+
+- *Дублировать §20 интеграционными e2e с реальным Platega/Wizard* — *причина:* ТЗ-13, моки в существующих тестах.
+
+### Проверка
+
+- `pytest tests/test_tz13_coverage_map.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-12: фоновые воркеры (fulfillment, expire, hung)
 
 **Ветка:** `cursor/workers-tz12-03eb` → `main`
