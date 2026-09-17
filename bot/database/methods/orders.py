@@ -112,6 +112,9 @@ async def transition_order(
 
         await release_stock_reservations(session, order.id)
     if to_status == OrderStatus.COMPLETED:
+        from bot.misc.services.referral import credit_referral_for_order
+
+        await credit_referral_for_order(session, order)
         order.profit_cents = compute_profit_cents(
             order.total_cents,
             order.cost_cents,
@@ -119,6 +122,10 @@ async def transition_order(
             order.referral_amount_cents,
         )
         order.completed_at = now or datetime.datetime.now(datetime.timezone.utc)
+    if to_status == OrderStatus.REFUNDED:
+        from bot.misc.services.referral import reverse_referral_for_order
+
+        await reverse_referral_for_order(session, order)
     await _append_history(session, order, from_status, to_status, actor_id)
     return order
 

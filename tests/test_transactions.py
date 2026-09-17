@@ -241,9 +241,8 @@ class TestProcessPaymentWithReferral:
         assert await _get_balance(200002) == 300.0
 
     async def test_payment_with_referral_bonus(self, user_factory):
-        # Create referrer first
+        """Top-up no longer pays referral bonus (ТЗ-07)."""
         await user_factory(telegram_id=200010, balance=0)
-        # Create user with referrer
         await user_factory(telegram_id=200003, balance=0, referral_id=200010)
 
         success, msg = await process_payment_with_referral(
@@ -256,22 +255,15 @@ class TestProcessPaymentWithReferral:
 
         assert success is True
         assert msg == "success"
-
-        # User got 100
         assert await _get_balance(200003) == 100.0
+        assert await _get_balance(200010) == 0.0
 
-        # Referrer got 10 (10% of 100)
-        assert await _get_balance(200010) == 10.0
-
-        # ReferralEarnings record created
         async with Database().session() as s:
             earnings = (await s.execute(select(ReferralEarnings).where(
                 ReferralEarnings.referrer_id == 200010,
                 ReferralEarnings.referral_id == 200003,
             ))).scalars().all()
-            assert len(earnings) == 1
-            assert cents_to_float_rub(earnings[0].amount) == 10.0
-            assert cents_to_float_rub(earnings[0].original_amount) == 100.0
+            assert len(earnings) == 0
 
     async def test_payment_no_referrer(self, user_factory):
         # User without referral_id

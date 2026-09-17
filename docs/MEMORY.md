@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-09-17 — ТЗ-07: промокоды и реферал на заказах
+
+**Ветка:** `cursor/promo-referral-tz07-03eb` → `main` (база включает ТЗ-06 до merge #10)
+
+### Сделали
+
+- Миграция `c7d8e9f0a1b2`: `min_order_cents`, `max_uses_per_user`, `promo_code_usages.order_id`, снят `uq_promo_usage_per_user`, unique `referral_earnings.order_id`.
+- `promo_rule_error` / `record_promo_usage` / `count_promo_usages_for_user`; повторная проверка лимитов под lock промо.
+- Корзина и redeem через `record_promo_usage`; buy_item — usage с `order_id`.
+- Реферал: `credit_referral_for_order` / `reverse_referral_for_order` на `Order.COMPLETED` / `REFUNDED`; убрано с top-up в `process_payment_with_referral`.
+- i18n: тексты «с покупок», не «с пополнений»; SQLAdmin поля промо; тесты `tests/test_promo_referral_tz07.py`.
+
+### Обсуждали
+
+- Параллельный race last-use промо на SQLite in-memory не сериализует `FOR UPDATE` — отдельный skipped-тест; на Postgres ожидается один победитель.
+
+### Отвергли
+
+- *Реферал с пополнения* — *причина:* ТЗ-07, начисление только с завершённого заказа.
+
+### Проверка
+
+- `pytest tests/test_promo_referral_tz07.py`
+- `pytest` (полный набор)
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-06: checkout и fulfillment (заказ, баланс, STOCK/API)
 
 **Ветка:** `cursor/fulfillment-worker-tz06-03eb` → `main`

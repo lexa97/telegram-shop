@@ -255,6 +255,8 @@ async def create_promo_code(
         expires_at=None,
         category_id: int = None,
         item_id: int = None,
+        min_order_cents: int = 0,
+        max_uses_per_user: int = 1,
 ) -> int | None:
     """Create a promo code. Returns ID or None if code already exists.
 
@@ -280,6 +282,8 @@ async def create_promo_code(
             discount_value=stored_value,
             scope=promo_scope_for(category_id, item_id),
             max_uses=max_uses,
+            min_order_cents=int(min_order_cents or 0),
+            max_uses_per_user=int(max_uses_per_user or 1),
             expires_at=expires_at,
             category_id=category_id,
             item_id=item_id,

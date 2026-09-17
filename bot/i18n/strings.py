@@ -62,7 +62,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "referral.description": (
             "📔 Реферальная система позволит Вам заработать деньги без всяких вложений. "
             "Необходимо всего лишь распространять свою реферальную ссылку и Вы будете получать "
-            "{percent}% от суммы пополнений Ваших рефералов на Ваш баланс бота."
+            "{percent}% от суммы покупок Ваших рефералов на Ваш баланс бота."
         ),
         "btn.view_referrals": "👥 Мои рефералы",
         "btn.view_earnings": "💰 Мои поступления",
@@ -79,7 +79,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                "👤 Реферал: <code>{telegram_id}</code> (<a href='tg://user?id={telegram_id}'>{name}</a>)\n"
                                "🔢 Количество: {amount} {currency}\n"
                                "🕘 Дата: <code>{date}</code>\n"
-                               "💵 С пополнения на {original_amount} {currency}"),
+                               "💵 С покупки на {original_amount} {currency}"),
 
         "all.earnings.title": "💰 Все ваши реферальные поступления:",
         "all.earnings.empty": "У вас пока нет реферальных поступлений",
@@ -89,7 +89,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "📊 Статистика реферальной системы:\n\n"
             "👥 Активных рефералов: {active_count}\n"
             "💰 Всего заработано: {total_earned} {currency}\n"
-            "📈 Общая сумма пополнений рефералов: {total_original} {currency}\n"
+            "📈 Общая сумма покупок рефералов: {total_original} {currency}\n"
             "🔢 Количество начислений: {earnings_count}"
         ),
 
@@ -435,6 +435,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "promo.expired": "❌ Промокод истёк.",
         "promo.max_uses_reached": "❌ Промокод исчерпан.",
         "promo.already_used": "❌ Вы уже использовали этот промокод.",
+        "promo.min_order": "❌ Промокод действует только при заказе от {min_amount} {currency}.",
         "promo.wrong_item": "❌ Промокод не применим к этому товару.",
         "promo.wrong_category": "❌ Промокод не применим к этой категории.",
         "promo.applied": "✅ Промокод <code>{code}</code> применён! Скидка: {discount}",
@@ -599,7 +600,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "referral.description": (
             "📔 The referral system lets you earn without any investment. "
             "Share your personal link and you will receive {percent}% of your referrals’ "
-            "top-ups to your bot balance."
+            "purchases to your bot balance."
         ),
         "btn.view_referrals": "👥 My referrals",
         "btn.view_earnings": "💰 My earnings",
@@ -616,7 +617,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
                                "👤 Referral: <code>{telegram_id}</code> (<a href='tg://user?id={telegram_id}'>{name}</a>)\n"
                                "🔢 Amount: {amount} {currency}\n"
                                "🕘 Date: <code>{date}</code>\n"
-                               "💵 From a deposit to {original_amount} {currency}"),
+                               "💵 From a purchase of {original_amount} {currency}"),
 
         "all.earnings.title": "💰 All your referral earnings:",
         "all.earnings.empty": "You have no referral earnings yet",
@@ -626,7 +627,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
             "📊 Referral system statistics:\n\n"
             "👥 Active referrals: {active_count}\n"
             "💰 Total earned: {total_earned} {currency}\n"
-            "📈 Total referrals top-ups: {total_original} {currency}\n"
+            "📈 Total referrals purchases: {total_original} {currency}\n"
             "🔢 Number of earnings: {earnings_count}"
         ),
 
@@ -972,6 +973,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "promo.expired": "❌ Promo code has expired.",
         "promo.max_uses_reached": "❌ Promo code uses exhausted.",
         "promo.already_used": "❌ You already used this promo code.",
+        "promo.min_order": "❌ Promo code requires a minimum order of {min_amount} {currency}.",
         "promo.wrong_item": "❌ Promo code is not applicable to this item.",
         "promo.wrong_category": "❌ Promo code is not applicable to this category.",
         "promo.applied": "✅ Promo code <code>{code}</code> applied! Discount: {discount}",
