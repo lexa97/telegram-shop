@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-09-17 — ТЗ-09: UX ответа в SQLAdmin (переписка по тикету)
+
+**Ветка:** `cursor/support-admin-ux-03eb` → `main`
+
+### Сделали
+
+- Страница `/admin/support-reply` рендерится через шаблон SQLAdmin (`layout.html`) — боковое меню сохраняется.
+- Убран ручной ввод ID: action **Messages & reply** у `SupportTicketAdmin`, список тикетов на странице без `ticket_id`, история сообщений + форма ответа на выбранном тикете.
+- Пункт меню «Support reply» скрыт (`is_visible=False`); раздел **Support** в сайдбаре: тикеты и сообщения.
+- `ADMIN_WEB_OPERATOR_ID` уходит в hidden-поле; тест редиректа action.
+
+### Обсуждали
+
+- Жалоба: отдельная «голая» форма без сайдбара и с полем Ticket ID — непригодна для операторов.
+
+### Отвергли
+
+- *Оставить отдельный пункт меню «Support reply»* — *причина:* дублирует тикеты и провоцирует ввод ID вручную.
+- *Полностью встроить ответ в стандартный `details.html` без кастомного view* — *причина:* SQLAdmin не передаёт в details произвольный контекст (переписка); отдельная страница с layout проще.
+
+### Проверка
+
+- `pytest tests/test_support_tz09.py tests/test_support_admin_ux.py`
+- Админка: **Support → Support Tickets** → выбрать тикет → **Messages & reply** → переписка и форма ответа.
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — Платежи: конфиг только через админку (ТЗ-04)
 
 **Ветка:** `cursor/payments-admin-config-03eb` → `main`
