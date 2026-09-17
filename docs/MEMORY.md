@@ -15,7 +15,26 @@
 
 ---
 
-## 2026-09-17 — Каркас интеграционных тестов (сценарии → pytest)
+## 2026-09-17 — INT-001: магазин → корзина → пополнение → checkout
+
+**Ветка:** `cursor/integration-tests-scaffold-987a` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/11
+
+### Сделали
+
+- Сценарий в `docs/testing/integration-scenarios.md` (статус `done`).
+- `tests/integration/test_int_001_shop_cart_topup_checkout.py` — полный mock-поток.
+- `tests/integration/helpers.py` — шаги «магазин → карточка → в корзину».
+
+### Обсуждали
+
+- «Разные типы товаров» — два finite-ключа + один unlimited (infinity) STOCK; API-товар в INT-001 не включали (отдельный сценарий позже).
+
+### Проверка
+
+- `pytest tests/integration/test_int_001_shop_cart_topup_checkout.py -v` — PASS.
+
+---
 
 **Ветка:** `cursor/integration-tests-scaffold-987a` → `main`  
 **PR:** https://github.com/lexa97/telegram-shop/pull/11
@@ -40,7 +59,7 @@
 ### Проверка
 
 - `pytest` — полный suite без регрессий.
-- `pytest tests/integration/` — 0 tests (ожидаемо до первых сценариев).
+- `pytest tests/integration/` — INT-001 (`test_full_purchase_flow`).
 
 ### Graphify
 
