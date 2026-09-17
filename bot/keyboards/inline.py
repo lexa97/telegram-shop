@@ -47,8 +47,9 @@ def admin_console_keyboard(maintenance_mode: bool = False, role: int = 127) -> I
     Admin panel — shows only buttons the user has permissions for.
     """
     kb = InlineKeyboardBuilder()
-    if role & Permission.CATALOG_MANAGE:
+    if role & (Permission.CATALOG_MANAGE | Permission.STATS_VIEW):
         kb.button(text=localize("admin.menu.shop"), callback_data="shop_management")
+    if role & Permission.CATALOG_MANAGE:
         kb.button(text=localize("admin.menu.goods"), callback_data="goods_management")
         kb.button(text=localize("admin.menu.categories"), callback_data="categories_management")
     if role & Permission.PROMO_MANAGE:

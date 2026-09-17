@@ -13,6 +13,8 @@ from bot.database.methods.create import create_role
 from bot.database.methods.update import update_role
 from bot.database.methods.delete import delete_role
 from bot.database.models import Permission
+
+FULL_PERMS = Permission.all_bits()
 from bot.handlers.admin.role_management import (
     role_management_handler, role_view_handler, role_create_name, role_edit_name,
     role_delete_confirm, assign_role_list, assign_role_confirm,
@@ -39,11 +41,13 @@ class TestRoleCRUDMethods:
 
     async def test_get_all_roles(self):
         roles = await get_all_roles()
-        assert len(roles) >= 3
+        assert len(roles) >= 5
         names = [r['name'] for r in roles]
         assert 'USER' in names
         assert 'ADMIN' in names
-        assert 'OWNER' in names
+        assert 'SUPERADMIN' in names
+        assert 'OPERATOR' in names
+        assert 'MANAGER' in names
         # Ordered by permissions ascending
         perms = [r['permissions'] for r in roles]
         assert perms == sorted(perms)
@@ -67,12 +71,12 @@ class TestRoleCRUDMethods:
             assert (r['permissions'] & ~1) == 0
 
     async def test_get_roles_with_max_perms_all(self):
-        roles = await get_roles_with_max_perms(Permission.all_bits())
-        assert len(roles) >= 3  # At least USER, ADMIN, OWNER
+        roles = await get_roles_with_max_perms(FULL_PERMS)
+        assert len(roles) >= 5
 
     async def test_get_roles_with_max_perms_includes_custom(self, role_factory):
         await role_factory("HELPER", 3)
-        roles = await get_roles_with_max_perms(1023)
+        roles = await get_roles_with_max_perms(FULL_PERMS)
         names = [r['name'] for r in roles]
         assert 'HELPER' in names
 
@@ -128,8 +132,8 @@ class TestRoleCRUDMethods:
         assert success is False
         assert "built-in" in err
 
-    async def test_delete_role_builtin_owner(self):
-        role_id = await get_role_id_by_name('OWNER')
+    async def test_delete_role_builtin_superadmin(self):
+        role_id = await get_role_id_by_name('SUPERADMIN')
         success, err = await delete_role(role_id)
         assert success is False
         assert "built-in" in err
@@ -152,8 +156,7 @@ class TestRoleCRUDMethods:
     async def test_select_max_role_id_returns_highest_perms(self):
         max_id = await select_max_role_id()
         role = await get_role_by_id(max_id)
-        # Should be OWNER with highest permissions
-        assert role['name'] == 'OWNER'
+        assert role['name'] == 'SUPERADMIN'
         all_roles = await get_all_roles()
         for r in all_roles:
             assert r['permissions'] <= role['permissions']
@@ -166,7 +169,7 @@ class TestRoleManagementHandlers:
         call = make_callback_query(data="role_mgmt", user_id=900100)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await role_management_handler(call, fsm_context)
 
         call.message.edit_text.assert_called_once()
@@ -179,7 +182,7 @@ class TestRoleManagementHandlers:
         call = make_callback_query(data=f"role_v_{role_id}", user_id=900101)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await role_view_handler(call)
 
         call.message.edit_text.assert_called_once()
@@ -188,8 +191,7 @@ class TestRoleManagementHandlers:
 
     async def test_role_view_perm_denied(self, make_callback_query):
 
-        # OWNER role has perms=127, caller has perms=31 (ADMIN)
-        role_id = await get_role_id_by_name('OWNER')
+        role_id = await get_role_id_by_name('SUPERADMIN')
         call = make_callback_query(data=f"role_v_{role_id}", user_id=900102)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
@@ -206,7 +208,7 @@ class TestRoleManagementHandlers:
         await fsm_context.set_state("waiting_role_name")
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await role_create_name(msg, fsm_context)
 
         msg.answer.assert_called_once()
@@ -220,7 +222,7 @@ class TestRoleManagementHandlers:
         await fsm_context.set_state("waiting_role_name")
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await role_create_name(msg, fsm_context)
 
         msg.answer.assert_called_once()
@@ -231,7 +233,7 @@ class TestRoleManagementHandlers:
 
         call = make_callback_query(data="rp_done", user_id=900105)
         await fsm_context.update_data(
-            role_name="NEWROLE", role_perms=3, caller_perms=127, mode='create'
+            role_name="NEWROLE", role_perms=3, caller_perms=FULL_PERMS, mode='create'
         )
 
         await _perms_done(call, fsm_context)
@@ -248,7 +250,7 @@ class TestRoleManagementHandlers:
         await role_factory("EXISTING", 3)
         call = make_callback_query(data="rp_done", user_id=900106)
         await fsm_context.update_data(
-            role_name="EXISTING", role_perms=5, caller_perms=127, mode='create'
+            role_name="EXISTING", role_perms=5, caller_perms=FULL_PERMS, mode='create'
         )
 
         await _perms_done(call, fsm_context)
@@ -260,7 +262,7 @@ class TestRoleManagementHandlers:
     async def test_role_edit_skip_name(self, make_message, fsm_context):
 
         await fsm_context.update_data(
-            role_id=1, role_name="ORIGINAL", role_perms=3, caller_perms=127, mode='edit'
+            role_id=1, role_name="ORIGINAL", role_perms=3, caller_perms=FULL_PERMS, mode='edit'
         )
         await fsm_context.set_state("editing_role_name")
         msg = make_message(text="/skip", user_id=900107)
@@ -276,7 +278,7 @@ class TestRoleManagementHandlers:
         role_id = await role_factory("EDITABLE", 3)
         call = make_callback_query(data="rp_done", user_id=900108)
         await fsm_context.update_data(
-            role_id=role_id, role_name="EDITED", role_perms=7, caller_perms=127, mode='edit'
+            role_id=role_id, role_name="EDITED", role_perms=7, caller_perms=FULL_PERMS, mode='edit'
         )
 
         await _perms_done(call, fsm_context)
@@ -292,7 +294,7 @@ class TestRoleManagementHandlers:
 
         call = make_callback_query(data="rp_done", user_id=900109)
         await fsm_context.update_data(
-            role_name="ESCALATED", role_perms=127, caller_perms=31, mode='create'
+            role_name="ESCALATED", role_perms=FULL_PERMS, caller_perms=31, mode='create'
         )
 
         await _perms_done(call, fsm_context)
@@ -305,7 +307,7 @@ class TestRoleManagementHandlers:
     async def test_toggle_perm(self, make_callback_query, fsm_context):
 
         call = make_callback_query(data="rp_t_2", user_id=900110)  # BROADCAST=2
-        await fsm_context.update_data(role_perms=1, caller_perms=127)
+        await fsm_context.update_data(role_perms=1, caller_perms=FULL_PERMS)
 
         await _toggle_perm(call, fsm_context)
 
@@ -315,7 +317,7 @@ class TestRoleManagementHandlers:
     async def test_toggle_perm_off(self, make_callback_query, fsm_context):
 
         call = make_callback_query(data="rp_t_2", user_id=900111)
-        await fsm_context.update_data(role_perms=3, caller_perms=127)
+        await fsm_context.update_data(role_perms=3, caller_perms=FULL_PERMS)
 
         await _toggle_perm(call, fsm_context)
 
@@ -339,7 +341,7 @@ class TestRoleManagementHandlers:
         call = make_callback_query(data=f"role_dc_{role_id}", user_id=900113)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await role_delete_confirm(call)
 
         call.message.edit_text.assert_called_once()
@@ -349,8 +351,7 @@ class TestRoleManagementHandlers:
 
     async def test_delete_role_perm_denied(self, make_callback_query):
 
-        # OWNER role has perms=127, caller has perms=31
-        role_id = await get_role_id_by_name('OWNER')
+        role_id = await get_role_id_by_name('SUPERADMIN')
         call = make_callback_query(data=f"role_dc_{role_id}", user_id=900114)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
@@ -368,7 +369,7 @@ class TestRoleManagementHandlers:
         call = make_callback_query(data="asr_list_700010", user_id=900115)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await assign_role_list(call)
 
         call.message.edit_text.assert_called_once()
@@ -382,7 +383,7 @@ class TestRoleManagementHandlers:
         call = make_callback_query(data="asr_list_700011", user_id=900116)
 
         with patch('bot.handlers.admin.role_management.check_role_cached',
-                   new_callable=AsyncMock, return_value=127):
+                   new_callable=AsyncMock, return_value=FULL_PERMS):
             await assign_role_list(call)
 
         call.answer.assert_called_once()
@@ -392,10 +393,10 @@ class TestRoleManagementHandlers:
     async def test_assign_role_perm_denied(self, make_callback_query, user_factory):
 
         await user_factory(telegram_id=700012, role_id=1)
-        owner_role_id = await get_role_id_by_name('OWNER')
-        call = make_callback_query(data=f"asr_{owner_role_id}_700012", user_id=900117)
+        superadmin_role_id = await get_role_id_by_name('SUPERADMIN')
+        call = make_callback_query(data=f"asr_{superadmin_role_id}_700012", user_id=900117)
 
-        # Caller has ADMIN perms (31), trying to assign OWNER role (127)
+        # Caller has limited perms (31), trying to assign SUPERADMIN
         with patch('bot.handlers.admin.role_management.check_role_cached',
                    new_callable=AsyncMock, return_value=31):
             await assign_role_confirm(call)
@@ -408,10 +409,11 @@ class TestRoleManagementHandlers:
 class TestHelpers:
 
     def test_format_permissions_all(self):
-        result = _format_permissions(127)
+        result = _format_permissions(FULL_PERMS)
         assert "USE" in result
         assert "BROADCAST" in result
-        assert "OWNER" in result
+        assert "OWN" in result
+        assert "AUDIT" in result
 
     def test_format_permissions_none(self):
         assert _format_permissions(0) == "\u2014"  # em dash
@@ -433,7 +435,7 @@ class TestHelpers:
         assert any("BROADCAST" in t for t in perm_buttons)
 
     def test_build_perms_keyboard_shows_checked(self):
-        markup = _build_perms_keyboard(1, 127)  # USE is on
+        markup = _build_perms_keyboard(1, FULL_PERMS)  # USE is on
         texts = [btn.text for row in markup.inline_keyboard for btn in row]
         use_btn = next(t for t in texts if "USE" in t)
         assert "\u2713" in use_btn  # checkmark

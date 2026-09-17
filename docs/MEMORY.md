@@ -22,42 +22,54 @@
 
 ### Сделали
 
-- Модели `SupportTicket` / `SupportMessage` (`open|pending|closed`, `linked_order_id`), миграция `e0f1a2b3c4d5` после `c7d8e9f0a1b2`.
-- `bot/database/methods/support.py`: создание, сообщения, закрытие, привязка заказа (владелец), ответ staff, списки для оператора.
-- `Permission.TICKETS_MANAGE` (1<<10) в `Permission.all_bits()`, выдача ADMIN/OWNER в `insert_roles()`.
-- Пользователь: `bot/handlers/user/support.py`, callback `support` вместо `tg://helper`.
-- Оператор in-chat: `bot/handlers/admin/support.py` (список, просмотр с заказом, ответ → `send_message` + `SupportMessage`, статус).
-- SQLAdmin: `SupportTicketAdmin`, `SupportMessageAdmin`; i18n `support.*` / `admin.support.*`.
-- Тесты `tests/test_support_tz09.py`; правки keyboards/admin/role tests под новый бит.
-
-### Обсуждали
-
-- Один активный тикет на пользователя вместо лимита N — проще антиспам без дублирования rate-limit middleware.
-- In-chat для оператора + SQLAdmin (ТЗ-10) — минимум по ТЗ; полноценная web-админка тикетов остаётся в ТЗ-10.
-
-### Отвергли
-
-- *Медиа в тикетах v1* — *причина:* только текст в первой версии (зафиксировано в ТЗ).
-- *Единственный канал `tg://helper`* — *причина:* после внедрения тикеты в боте, helper не основной путь.
+- Модели `SupportTicket` / `SupportMessage`, миграция `e0f1a2b3c4d5` (revises `d8e9f0a1b2c3` после merge с ТЗ-08 в `main`).
+- `TICKETS_MANAGE` = 1<<11 в матрице ТЗ-08; OPERATOR уже имеет тикеты в `insert_roles()`.
+- User/admin handlers, SQLAdmin list views; `tests/test_support_tz09.py`.
 
 ### Проверка
 
 - `pytest tests/test_support_tz09.py`
-- `pytest` (полный набор)
+- `pytest`
 
 ### Graphify
 
 - После merge: `./devtools/graphify/refresh-after-merge.sh`.
 
-### Merge с ТЗ-08
+---
 
-- При merge PR #13 раньше #14: rebase ТЗ-09 на `main`, `down_revision` миграции → `d8e9f0a1b2c3`, согласовать `TICKETS_MANAGE` с матрицей RBAC.
+## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
+
+**Ветка:** смержено в `main` (PR #13)
+
+### Сделали
+
+- Новые биты: `ORDERS_MANAGE`, `TICKETS_MANAGE`, `PROVIDERS_MANAGE`, `PAYMENTS_CONFIG`, `AUDIT_VIEW`; `Permission.all_bits()`.
+- `Role.insert_roles()`: USER, OPERATOR, MANAGER, ADMIN, SUPERADMIN; rename `OWNER` → `SUPERADMIN`.
+- Миграция `d8e9f0a1b2c3`; `bot/database/role_names.py`; тесты `tests/test_rbac_tz08.py`.
+
+### Матрица (биты)
+
+| Роль | Назначение |
+|------|------------|
+| USER | USE |
+| OPERATOR | USE, USERS, ORDERS, TICKETS, STATS |
+| MANAGER | USE, CATALOG, PROMOS, PROVIDERS, STATS |
+| ADMIN | USE, BROADCAST, SETTINGS, USERS, CATALOG, STATS, BALANCE, PROMOS, ORDERS, PROVIDERS, PAYMENTS |
+| SUPERADMIN | все биты включая ADMINS, OWN, AUDIT |
+
+### Проверка
+
+- `pytest tests/test_rbac_tz08.py tests/test_role_management.py`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
 
 ---
 
 ## 2026-09-17 — ТЗ-07: промокоды и реферал на заказах
 
-**Ветка:** `cursor/promo-referral-tz07-03eb` → `main` (rebase/merge поверх ТЗ-06 в `main`, PR #10)
+**Ветка:** смержено в `main` (PR #12)
 
 ### Сделали
 

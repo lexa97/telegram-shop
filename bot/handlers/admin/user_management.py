@@ -18,6 +18,7 @@ from bot.database.methods import (
 from bot.database.methods.read import get_user_profile_aggregates
 from bot.keyboards import back, close, simple_buttons, lazy_paginated_keyboard
 from bot.database.methods.audit import log_audit
+from bot.database.role_names import is_superadmin_role
 from bot.filters import HasPermissionFilter
 from bot.handlers.admin._common import user_profile_lines
 from bot.handlers.other import display_name, caller_name
@@ -56,14 +57,14 @@ async def _build_user_profile(bot, target_id: int, caller_perms: int = 0):
     actions: list[tuple[str, str]] = []
     role_name = role
 
-    if role_name != 'OWNER':
+    if not is_superadmin_role(role_name):
         actions.append((localize('btn.admin.assign_role'), f"asr_list_{target_id}"))
 
     if caller_perms & Permission.BALANCE_MANAGE:
         actions.append((localize('btn.admin.replenish_user'), f"fill-user-balance_{target_id}"))
         actions.append((localize('btn.admin.deduct_user'), f"deduct-user-balance_{target_id}"))
 
-    if role_name != 'OWNER':
+    if not is_superadmin_role(role_name):
         if blocked:
             actions.append((localize('btn.admin.unblock'), f"unblock-user_{target_id}"))
         else:
@@ -597,7 +598,7 @@ async def block_user_handler(call: CallbackQuery):
         return
 
     role_name = await check_role_name_by_id(db_user.get('role_id'))
-    if role_name == 'OWNER':
+    if is_superadmin_role(role_name):
         await call.answer(localize('admin.users.cannot_block_owner'), show_alert=True)
         return
 

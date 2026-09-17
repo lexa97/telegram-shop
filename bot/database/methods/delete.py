@@ -67,7 +67,9 @@ async def delete_role(role_id: int) -> tuple[bool, str | None]:
             return False, "Role not found"
         if role.default:
             return False, "Cannot delete the default role"
-        if role.name in ('USER', 'ADMIN', 'OWNER'):
+        from bot.database.role_names import BUILTIN_ROLE_NAMES
+
+        if role.name in BUILTIN_ROLE_NAMES:
             return False, "Cannot delete built-in roles"
         user_count = (await s.execute(
             select(func.count(User.telegram_id)).where(User.role_id == role_id)

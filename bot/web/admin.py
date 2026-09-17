@@ -244,16 +244,21 @@ class UserAdmin(AuditModelView, model=User):
 
 
 _PERM_FLAGS = [
-    (1,   "USE"),
-    (2,   "BROADCAST"),
-    (4,   "SETTINGS"),
-    (8,   "USERS"),
-    (16,  "CATALOG"),
-    (32,  "ADMINS"),
-    (64,  "OWNER"),
-    (128, "STATS"),
-    (256, "BALANCE"),
-    (512, "PROMOS"),
+    (1,     "USE"),
+    (2,     "BROADCAST"),
+    (4,     "SETTINGS"),
+    (8,     "USERS"),
+    (16,    "CATALOG"),
+    (32,    "ADMINS"),
+    (64,    "OWN"),
+    (128,   "STATS"),
+    (256,   "BALANCE"),
+    (512,   "PROMOS"),
+    (1024,  "ORDERS"),
+    (2048,  "TICKETS"),
+    (4096,  "PROVIDERS"),
+    (8192,  "PAYMENTS"),
+    (16384, "AUDIT"),
 ]
 
 
@@ -287,8 +292,9 @@ class RoleAdmin(AuditModelView, model=Role):
             "description": (
                 "Bitmask value — sum the flags you need: "
                 "USE=1, BROADCAST=2, SETTINGS=4, USERS=8, CATALOG=16, ADMINS=32, "
-                "OWNER=64, STATS=128, BALANCE=256, PROMOS=512. "
-                "Example: 927 = full Admin, 1023 = all (Owner)."
+                "OWN=64, STATS=128, BALANCE=256, PROMOS=512, ORDERS=1024, "
+                "TICKETS=2048, PROVIDERS=4096, PAYMENTS=8192, AUDIT=16384. "
+                "SUPERADMIN = sum of all flags."
             ),
         },
     }
