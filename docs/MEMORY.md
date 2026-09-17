@@ -15,6 +15,46 @@
 
 ---
 
+## 2026-09-17 — PR #14: ТЗ-09 — тикеты поддержки
+
+**Ветка:** `cursor/support-tickets-tz09-03eb` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/14
+
+### Сделали
+
+- Модели `SupportTicket` / `SupportMessage` (`open|pending|closed`, `linked_order_id`), миграция `e0f1a2b3c4d5` после `c7d8e9f0a1b2`.
+- `bot/database/methods/support.py`: создание, сообщения, закрытие, привязка заказа (владелец), ответ staff, списки для оператора.
+- `Permission.TICKETS_MANAGE` (1<<10) в `Permission.all_bits()`, выдача ADMIN/OWNER в `insert_roles()`.
+- Пользователь: `bot/handlers/user/support.py`, callback `support` вместо `tg://helper`.
+- Оператор in-chat: `bot/handlers/admin/support.py` (список, просмотр с заказом, ответ → `send_message` + `SupportMessage`, статус).
+- SQLAdmin: `SupportTicketAdmin`, `SupportMessageAdmin`; i18n `support.*` / `admin.support.*`.
+- Тесты `tests/test_support_tz09.py`; правки keyboards/admin/role tests под новый бит.
+
+### Обсуждали
+
+- Один активный тикет на пользователя вместо лимита N — проще антиспам без дублирования rate-limit middleware.
+- In-chat для оператора + SQLAdmin (ТЗ-10) — минимум по ТЗ; полноценная web-админка тикетов остаётся в ТЗ-10.
+
+### Отвергли
+
+- *Медиа в тикетах v1* — *причина:* только текст в первой версии (зафиксировано в ТЗ).
+- *Единственный канал `tg://helper`* — *причина:* после внедрения тикеты в боте, helper не основной путь.
+
+### Проверка
+
+- `pytest tests/test_support_tz09.py`
+- `pytest` (полный набор)
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+### Merge с ТЗ-08
+
+- При merge PR #13 раньше #14: rebase ТЗ-09 на `main`, `down_revision` миграции → `d8e9f0a1b2c3`, согласовать `TICKETS_MANAGE` с матрицей RBAC.
+
+---
+
 ## 2026-09-17 — ТЗ-07: промокоды и реферал на заказах
 
 **Ветка:** `cursor/promo-referral-tz07-03eb` → `main` (rebase/merge поверх ТЗ-06 в `main`, PR #10)
