@@ -20,7 +20,7 @@ async def seed_fulfillment_providers() -> None:
                     enabled=True,
                     config_json=json.dumps(
                         {
-                            "base_url": "https://api.wizard.example",
+                            "base_url": "https://api.wizard-bot.com/v1",
                             "api_key": "test-key",
                             "timeout_seconds": 5,
                             "result_mapping": {"path": "delivery.value"},

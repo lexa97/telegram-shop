@@ -307,7 +307,7 @@
 
 ### Обсуждали
 
-- Публичной доки Wizard в репо нет — зафиксирован условный `base_url` `https://api.wizard.example`, поля ответа `id`, `status`, `delivery.value` (переопределяются `result_mapping` на link/provider).
+- Wizard API: [api.wizard-bot.com/docs](https://api.wizard-bot.com/docs/) — `https://api.wizard-bot.com/v1`, заголовок `X-API-KEY`, `POST /orders/create` (`recipient`, `quantity`, `category` stars|premium), `GET /orders/get/{id}`; инструкция `docs/providers/WIZARD.md`.
 - Полный retry-loop и вызов `create_external_order` из воркера — **ТЗ-06** / **ТЗ-12**; здесь один HTTP-запрос и классификация ошибок.
 - Платёжный `Payments.provider` не трогали — fulfillment отдельно от Platega (ТЗ-04).
 
