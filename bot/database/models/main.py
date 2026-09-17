@@ -235,6 +235,7 @@ class Operations(Database.BASE):
 class Payments(Database.BASE):
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    internal_uuid: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, unique=True, index=True)
     provider: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     external_id: Mapped[str] = mapped_column(String(128), nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(

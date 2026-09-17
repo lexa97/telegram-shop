@@ -84,6 +84,7 @@ from bot.database.models.main import (
     AuditLog, PromoCodes, CartItems, Reviews, promo_scope_for,
 )
 from bot.database.models.fulfillment_providers import FulfillmentProvider, GoodsProviderLink
+from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
 from bot.misc.metrics import get_metrics
 from bot.misc.caching import get_cache_manager
 from bot.database.methods.read import (
@@ -453,9 +454,33 @@ class GoodsProviderLinkAdmin(ModelView, model=GoodsProviderLink):
     name_plural = "Goods Provider Links"
 
 
+class PaymentGatewayAdmin(ModelView, model=PaymentGateway):
+    column_list = [PaymentGateway.id, PaymentGateway.code, PaymentGateway.enabled, PaymentGateway.created_at]
+    column_searchable_list = [PaymentGateway.code]
+    name = "Payment Gateway"
+    name_plural = "Payment Gateways"
+
+
+class PaymentInstrumentAdmin(ModelView, model=PaymentInstrument):
+    column_list = [
+        PaymentInstrument.id,
+        PaymentInstrument.code,
+        PaymentInstrument.title,
+        PaymentInstrument.enabled,
+        PaymentInstrument.sort_order,
+        PaymentInstrument.currency,
+        PaymentInstrument.gateway_id,
+    ]
+    column_searchable_list = [PaymentInstrument.code, PaymentInstrument.title]
+    name = "Payment Instrument"
+    name_plural = "Payment Instruments"
+
+
 class PaymentsAdmin(ModelView, model=Payments):
-    column_list = [Payments.id, Payments.provider, Payments.external_id, Payments.user_id,
-                   Payments.amount, Payments.currency, Payments.status, Payments.created_at]
+    column_list = [
+        Payments.id, Payments.internal_uuid, Payments.provider, Payments.external_id, Payments.user_id,
+        Payments.amount, Payments.currency, Payments.status, Payments.created_at,
+    ]
     column_searchable_list = [Payments.user_id, Payments.external_id, Payments.provider]
     column_sortable_list = [Payments.id, Payments.created_at, Payments.amount, Payments.status]
     column_default_sort = (Payments.id, True)
@@ -746,11 +771,14 @@ def create_admin_app(bot: Any = None) -> Starlette:
     async def root_redirect(request: Request) -> RedirectResponse:
         return RedirectResponse(url="/admin")
 
+    from bot.web.payment_webhooks import platega_webhook
+
     routes = [
         Route("/", root_redirect),
         Route("/health", health_check),
         Route("/metrics", metrics_json),
         Route("/metrics/prometheus", prometheus_metrics),
+        Route("/webhooks/platega", platega_webhook, methods=["POST"]),
     ] + export_routes
 
     app = Starlette(routes=routes)
@@ -781,6 +809,8 @@ def create_admin_app(bot: Any = None) -> Starlette:
     admin.add_view(ItemValuesAdmin)
     admin.add_view(BoughtGoodsAdmin)
     admin.add_view(OperationsAdmin)
+    admin.add_view(PaymentGatewayAdmin)
+    admin.add_view(PaymentInstrumentAdmin)
     admin.add_view(PaymentsAdmin)
     admin.add_view(ReferralEarningsAdmin)
     admin.add_view(AuditLogAdmin)

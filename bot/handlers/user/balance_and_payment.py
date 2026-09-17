@@ -8,12 +8,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 from bot.database.methods import get_user_referral, buy_item_transaction, process_payment_with_referral, create_pending_payment
-from bot.keyboards import back, payment_menu, close, get_payment_choice
+from bot.keyboards import back, payment_menu, close, get_payment_choice, payment_choice_from_instruments
 from bot.logger_mesh import logger
 from bot.database.methods.audit import log_audit
 from bot.database.methods.cache_utils import safe_create_task
 from bot.misc import EnvKeys, ItemPurchaseRequest, validate_telegram_id, validate_money_amount, PaymentRequest
-from bot.handlers.other import _any_payment_method_enabled, is_safe_item_name, caller_name
+from bot.handlers.other import payment_methods_available, is_safe_item_name, caller_name
+from bot.payments.credit import process_payment_topup
+from bot.payments.service import (
+    create_topup_via_instrument,
+    get_instrument_by_code,
+    list_enabled_instruments,
+)
+from bot.payments.gateways.platega import fetch_status as platega_fetch_status, gateway_config_from_json
 from bot.misc.metrics import get_metrics
 from bot.misc.services import CryptoPayAPI, CryptoPayAPIError, send_stars_invoice, send_fiat_invoice
 from bot.misc.services.payment import _minor_units_for, payload_amount
@@ -48,7 +55,7 @@ async def _notify_referrer_bonus(bot, user_id: int, amount_cents: int, payer_nam
 @router.callback_query(F.data == "replenish_balance")
 async def replenish_balance_callback_handler(call: CallbackQuery, state: FSMContext):
     """Ask user for the amount if at least one payment method is enabled."""
-    if not _any_payment_method_enabled():
+    if not await payment_methods_available():
         await call.answer(localize("payments.not_configured"), show_alert=True)
         return
 
@@ -72,9 +79,15 @@ async def replenish_balance_amount(message: Message, state: FSMContext):
 
         await state.update_data(amount_cents=amount)
 
+        instruments = await list_enabled_instruments()
+        keyboard = (
+            payment_choice_from_instruments(instruments)
+            if instruments
+            else get_payment_choice()
+        )
         await message.answer(
             localize("payments.method_choose"),
-            reply_markup=get_payment_choice()
+            reply_markup=keyboard,
         )
         await state.set_state(BalanceStates.waiting_payment)
 
@@ -102,9 +115,22 @@ async def invalid_amount(message: Message, state: FSMContext):
     )
 
 
+_LEGACY_PAY_MAP = {
+    "pay_cryptopay": "cryptopay",
+    "pay_stars": "stars",
+    "pay_fiat": "telegram_fiat",
+}
+
+
+def _instrument_code_from_callback(data: str) -> str | None:
+    if data.startswith("pay_inst_"):
+        return data.removeprefix("pay_inst_")
+    return _LEGACY_PAY_MAP.get(data)
+
+
 @router.callback_query(
     BalanceStates.waiting_payment,
-    F.data.in_(["pay_cryptopay", "pay_stars", "pay_fiat"])
+    F.data.startswith("pay_inst_") | F.data.in_(["pay_cryptopay", "pay_stars", "pay_fiat"]),
 )
 async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
     """Create an invoice for the chosen payment method."""
@@ -119,25 +145,59 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
         await state.clear()
         return
 
-    # Map callback data to provider
-    provider_map = {
-        "pay_cryptopay": "cryptopay",
-        "pay_stars": "stars",
-        "pay_fiat": "fiat"
-    }
-    provider = provider_map.get(call.data)
+    inst_code = _instrument_code_from_callback(call.data)
+    instrument = await get_instrument_by_code(inst_code) if inst_code else None
+    if not instrument or not instrument.enabled:
+        await call.answer(localize("payments.not_configured"), show_alert=True)
+        return
+
+    gateway_code = instrument.gateway.code
 
     try:
-        # Validate payment request
         amount_dec = Decimal(amount_cents) / Decimal(100)
         payment_request = PaymentRequest(
             amount=amount_dec,
             currency=EnvKeys.PAY_CURRENCY,
-            provider=provider
+            provider=gateway_code,
         )
         ttl_seconds = int(EnvKeys.PAYMENT_TIME)
 
-        if call.data == "pay_cryptopay":
+        if gateway_code == "platega":
+            try:
+                created = await create_topup_via_instrument(
+                    instrument=instrument,
+                    user_id=call.from_user.id,
+                    amount_cents=amount_cents,
+                    username=call.from_user.username,
+                )
+            except Exception as e:
+                await log_audit(
+                    "platega_invoice_fail",
+                    level="ERROR",
+                    user_id=call.from_user.id,
+                    resource_type="Payment",
+                    details=str(e),
+                )
+                await call.answer(localize("payments.fiat.create_fail", error=str(e)), show_alert=True)
+                return
+
+            await state.update_data(
+                invoice_id=created.external_id,
+                payment_type="platega",
+            )
+            await call.message.edit_text(
+                localize(
+                    "payments.invoice.summary",
+                    amount=int(amount_dec),
+                    minutes=int(ttl_seconds / 60),
+                    button=localize("btn.check_payment"),
+                    currency=payment_request.currency,
+                ),
+                reply_markup=payment_menu(created.payment_url),
+            )
+            return
+
+        if gateway_code == "cryptopay":
             if not EnvKeys.CRYPTO_PAY_TOKEN:
                 await call.answer(localize("payments.not_configured"), show_alert=True)
                 return
@@ -182,7 +242,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                 reply_markup=payment_menu(pay_url)
             )
 
-        elif call.data == "pay_stars":
+        elif gateway_code == "stars":
             if EnvKeys.STARS_PER_VALUE > 0:
                 try:
                     await send_stars_invoice(
@@ -199,7 +259,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                 await call.answer(localize("payments.not_configured"), show_alert=True)
                 return
 
-        elif call.data == "pay_fiat":
+        elif gateway_code == "telegram_fiat":
             if not EnvKeys.TELEGRAM_PROVIDER_TOKEN:
                 await call.answer(localize("payments.not_configured"), show_alert=True)
                 return
@@ -265,12 +325,11 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
                 return
 
             # Use transactional payment processing
-            success, error_msg = await process_payment_with_referral(
+            success, error_msg = await process_payment_topup(
                 user_id=user_id,
                 amount=balance_amount_cents,
                 provider="cryptopay",
                 external_id=str(invoice_id),
-                referral_percent=EnvKeys.REFERRAL_PERCENT
             )
 
             if not success:
@@ -308,6 +367,71 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
             await call.answer(localize("payments.not_paid_yet"))
         else:
             await call.answer(localize("payments.expired"), show_alert=True)
+
+    elif payment_type == "platega":
+        invoice_id = data.get("invoice_id")
+        if not invoice_id:
+            await call.answer(localize("payments.invoice_not_found"), show_alert=True)
+            await state.clear()
+            return
+        instrument = await get_instrument_by_code("card_mir")
+        if not instrument:
+            await call.answer(localize("payments.not_configured"), show_alert=True)
+            return
+        cfg = gateway_config_from_json(instrument.gateway.config_json)
+        try:
+            info = await platega_fetch_status(cfg, str(invoice_id))
+        except Exception as e:
+            await log_audit(
+                "platega_check_error",
+                level="ERROR",
+                user_id=user_id,
+                resource_type="Payment",
+                details=str(e),
+            )
+            await call.answer(localize("payments.crypto.check_fail", error=str(e)), show_alert=True)
+            return
+        if info.paid:
+            from bot.database.main import Database
+            from bot.database.models import Payments
+            from sqlalchemy import select
+
+            pending_amount = data.get("amount_cents")
+            async with Database().session() as s:
+                row = (
+                    await s.execute(
+                        select(Payments).where(
+                            Payments.provider == "platega",
+                            Payments.external_id == str(invoice_id),
+                        )
+                    )
+                ).scalars().first()
+                if row:
+                    pending_amount = row.amount
+            if not pending_amount:
+                await call.answer(localize("payments.unable_determine_amount"), show_alert=True)
+                return
+
+            success, error_msg = await process_payment_topup(
+                user_id=user_id,
+                amount=int(pending_amount),
+                provider="platega",
+                external_id=str(invoice_id),
+            )
+            if not success and error_msg != "already_processed":
+                await call.answer(localize("errors.general_error", e=error_msg), show_alert=True)
+                return
+            await call.message.edit_text(
+                localize(
+                    "payments.topped_simple",
+                    amount=format_cents_for_ui(int(pending_amount)),
+                    currency=EnvKeys.PAY_CURRENCY,
+                ),
+                reply_markup=back("profile"),
+            )
+            await state.clear()
+        else:
+            await call.answer(localize("payments.not_paid_yet"))
 
 
 @router.pre_checkout_query()

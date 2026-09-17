@@ -22,7 +22,7 @@ class TestReplenishBalance:
 
         call = make_callback_query(data="replenish_balance", user_id=400001)
 
-        with patch('bot.handlers.user.balance_and_payment._any_payment_method_enabled', return_value=False):
+        with patch('bot.handlers.user.balance_and_payment.payment_methods_available', new_callable=AsyncMock, return_value=False):
             await replenish_balance_callback_handler(call, fsm_context)
 
         call.answer.assert_called_once()
@@ -33,7 +33,7 @@ class TestReplenishBalance:
 
         call = make_callback_query(data="replenish_balance", user_id=400002)
 
-        with patch('bot.handlers.user.balance_and_payment._any_payment_method_enabled', return_value=True), \
+        with patch('bot.handlers.user.balance_and_payment.payment_methods_available', new_callable=AsyncMock, return_value=True), \
              patch('bot.handlers.user.balance_and_payment.EnvKeys') as env:
             env.PAY_CURRENCY = "RUB"
             await replenish_balance_callback_handler(call, fsm_context)

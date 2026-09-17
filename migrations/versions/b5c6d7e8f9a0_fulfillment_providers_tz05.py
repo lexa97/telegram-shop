@@ -1,7 +1,7 @@
 """fulfillment providers and goods_provider_links
 
 Revision ID: b5c6d7e8f9a0
-Revises: f3a4b5c6d7e8
+Revises: a4b5c6d7e8f9
 Create Date: 2026-09-16
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 
 revision: str = "b5c6d7e8f9a0"
-down_revision: Union[str, None] = "f3a4b5c6d7e8"
+down_revision: Union[str, None] = "a4b5c6d7e8f9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

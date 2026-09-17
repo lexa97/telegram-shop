@@ -54,6 +54,12 @@ class EnvKeys(ABC):
     REFERRAL_PERCENT: Final = int(_get_optional("REFERRAL_PERCENT", "0"))
     PAY_CURRENCY: Final = _get_optional("PAY_CURRENCY", "RUB")
     PAYMENT_TIME: Final = int(_get_optional("PAYMENT_TIME", "1800"))
+    PLATEGA_MERCHANT_ID: Final = _get_optional("PLATEGA_MERCHANT_ID", "")
+    PLATEGA_SECRET: Final = _get_optional("PLATEGA_SECRET", "")
+    PLATEGA_BASE_URL: Final = _get_optional("PLATEGA_BASE_URL", "https://app.platega.io")
+    PLATEGA_PAYMENT_METHOD: Final = int(_get_optional("PLATEGA_PAYMENT_METHOD", "11"))
+    PLATEGA_RETURN_URL: Final = _get_optional("PLATEGA_RETURN_URL", "https://t.me")
+    PLATEGA_FAILED_URL: Final = _get_optional("PLATEGA_FAILED_URL", "https://t.me")
     MIN_AMOUNT: Final = int(_get_optional("MIN_AMOUNT", "20"))
     MAX_AMOUNT: Final = int(_get_optional("MAX_AMOUNT", "10000"))
 

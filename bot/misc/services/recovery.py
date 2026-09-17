@@ -68,7 +68,7 @@ class RecoveryManager:
                 select(Payments).where(
                     Payments.status == "pending",
                     Payments.created_at < cutoff,
-                    Payments.provider == "cryptopay"
+                    Payments.provider.in_(("cryptopay", "platega")),
                 )
             )
             for p in result.scalars().all():
@@ -90,7 +90,7 @@ class RecoveryManager:
         Args:
             payment: dict with keys id, provider, external_id, user_id, amount, currency
         """
-        from bot.database.methods.transactions import process_payment_with_referral
+        from bot.payments.credit import process_payment_topup
         from bot.misc import EnvKeys
         from bot.misc.services.payment import CryptoPayAPI
         from bot.i18n import localize
@@ -108,12 +108,11 @@ class RecoveryManager:
                 info = await crypto.get_invoice(p_external_id)
 
                 if info.get("status") == "paid":
-                    success, _ = await process_payment_with_referral(
+                    success, _ = await process_payment_topup(
                         user_id=p_user_id,
                         amount=p_amount,
                         provider=p_provider,
                         external_id=p_external_id,
-                        referral_percent=EnvKeys.REFERRAL_PERCENT
                     )
 
                     if success:
@@ -127,6 +126,35 @@ class RecoveryManager:
                             logger.error(f"Failed to notify user {p_user_id}: {e}")
 
                 elif info.get("status") in ["expired", "failed"]:
+                    await self._mark_payment_failed(p_id)
+
+            elif p_provider == "platega":
+                from bot.database.models.payment_config import PaymentGateway
+                from bot.payments.gateways.platega import (
+                    fetch_status as platega_fetch_status,
+                    gateway_config_from_json,
+                )
+
+                async with Database().session() as s:
+                    gw = (
+                        await s.execute(
+                            select(PaymentGateway).where(PaymentGateway.code == "platega")
+                        )
+                    ).scalars().first()
+                if not gw:
+                    return
+                cfg = gateway_config_from_json(gw.config_json)
+                info = await platega_fetch_status(cfg, p_external_id)
+                if info.paid:
+                    success, _ = await process_payment_topup(
+                        user_id=p_user_id,
+                        amount=p_amount,
+                        provider=p_provider,
+                        external_id=p_external_id,
+                    )
+                    if success:
+                        logger.info(f"Recovered platega payment {p_external_id}")
+                elif info.status in ("CANCELED", "CHARGEBACKED", "NOT_FOUND"):
                     await self._mark_payment_failed(p_id)
 
         except Exception as e:
