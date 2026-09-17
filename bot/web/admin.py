@@ -5,7 +5,7 @@ import time
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from sqladmin import Admin, ModelView
+from sqladmin import Admin, ModelView, action
 from sqladmin.authentication import AuthenticationBackend
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -84,7 +84,17 @@ from bot.database.models.main import (
     AuditLog, PromoCodes, CartItems, Reviews, promo_scope_for,
 )
 from bot.database.models.fulfillment_providers import FulfillmentProvider, GoodsProviderLink
+from bot.database.models.orders import Order
 from bot.database.models.payment_config import PaymentGateway, PaymentInstrument
+from bot.web.admin_helpers import (
+    format_order_money,
+    format_gateway_code,
+    mask_gateway_config,
+    run_manual_refund,
+    validate_json_text,
+    web_panel_operator_id,
+)
+from bot.database.models.support import SupportMessage, SupportTicket
 from bot.misc.metrics import get_metrics
 from bot.misc.caching import get_cache_manager
 from bot.database.methods.read import (
@@ -243,16 +253,21 @@ class UserAdmin(AuditModelView, model=User):
 
 
 _PERM_FLAGS = [
-    (1,   "USE"),
-    (2,   "BROADCAST"),
-    (4,   "SETTINGS"),
-    (8,   "USERS"),
-    (16,  "CATALOG"),
-    (32,  "ADMINS"),
-    (64,  "OWNER"),
-    (128, "STATS"),
-    (256, "BALANCE"),
-    (512, "PROMOS"),
+    (1,     "USE"),
+    (2,     "BROADCAST"),
+    (4,     "SETTINGS"),
+    (8,     "USERS"),
+    (16,    "CATALOG"),
+    (32,    "ADMINS"),
+    (64,    "OWN"),
+    (128,   "STATS"),
+    (256,   "BALANCE"),
+    (512,   "PROMOS"),
+    (1024,  "ORDERS"),
+    (2048,  "TICKETS"),
+    (4096,  "PROVIDERS"),
+    (8192,  "PAYMENTS"),
+    (16384, "AUDIT"),
 ]
 
 
@@ -286,8 +301,9 @@ class RoleAdmin(AuditModelView, model=Role):
             "description": (
                 "Bitmask value — sum the flags you need: "
                 "USE=1, BROADCAST=2, SETTINGS=4, USERS=8, CATALOG=16, ADMINS=32, "
-                "OWNER=64, STATS=128, BALANCE=256, PROMOS=512. "
-                "Example: 927 = full Admin, 1023 = all (Owner)."
+                "OWN=64, STATS=128, BALANCE=256, PROMOS=512, ORDERS=1024, "
+                "TICKETS=2048, PROVIDERS=4096, PAYMENTS=8192, AUDIT=16384. "
+                "SUPERADMIN = sum of all flags."
             ),
         },
     }
@@ -419,7 +435,7 @@ class OperationsAdmin(ModelView, model=Operations):
     icon = "fa-solid fa-money-bill-transfer"
 
 
-class FulfillmentProviderAdmin(ModelView, model=FulfillmentProvider):
+class FulfillmentProviderAdmin(AuditModelView, model=FulfillmentProvider):
     column_list = [
         FulfillmentProvider.id,
         FulfillmentProvider.code,
@@ -433,8 +449,13 @@ class FulfillmentProviderAdmin(ModelView, model=FulfillmentProvider):
     name = "Fulfillment Provider"
     name_plural = "Fulfillment Providers"
 
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        data["config_json"] = validate_json_text(data.get("config_json"), "config_json")
 
-class GoodsProviderLinkAdmin(ModelView, model=GoodsProviderLink):
+
+class GoodsProviderLinkAdmin(AuditModelView, model=GoodsProviderLink):
     column_list = [
         GoodsProviderLink.id,
         GoodsProviderLink.goods_id,
@@ -453,12 +474,50 @@ class GoodsProviderLinkAdmin(ModelView, model=GoodsProviderLink):
     name = "Goods Provider Link"
     name_plural = "Goods Provider Links"
 
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        for key, label in (
+            ("request_params", "request_params"),
+            ("result_mapping", "result_mapping"),
+        ):
+            if key in data:
+                data[key] = validate_json_text(data.get(key), label)
 
-class PaymentGatewayAdmin(ModelView, model=PaymentGateway):
-    column_list = [PaymentGateway.id, PaymentGateway.code, PaymentGateway.enabled, PaymentGateway.created_at]
+
+class PaymentGatewayAdmin(AuditModelView, model=PaymentGateway):
+    column_list = [
+        PaymentGateway.id,
+        PaymentGateway.code,
+        PaymentGateway.enabled,
+        PaymentGateway.config_json,
+        PaymentGateway.created_at,
+    ]
     column_searchable_list = [PaymentGateway.code]
+    column_formatters = {
+        PaymentGateway.code: format_gateway_code,
+        PaymentGateway.config_json: mask_gateway_config,
+    }
+    column_formatters_detail = {
+        PaymentGateway.code: format_gateway_code,
+        PaymentGateway.config_json: mask_gateway_config,
+    }
+    form_widget_args = {"config_json": {"rows": 16}}
+    form_excluded_columns = (
+        [PaymentGateway.config_json] if EnvKeys.admin_panel_operator_mode() else []
+    )
     name = "Payment Gateway"
     name_plural = "Payment Gateways"
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        if EnvKeys.admin_panel_operator_mode():
+            data.pop("config_json", None)
+            if not is_created and getattr(model, "config_json", None):
+                data["config_json"] = model.config_json
+        elif "config_json" in data:
+            data["config_json"] = validate_json_text(data.get("config_json"), "config_json")
 
 
 class PaymentInstrumentAdmin(ModelView, model=PaymentInstrument):
@@ -754,6 +813,126 @@ async def prometheus_metrics(request: Request) -> PlainTextResponse:
     return PlainTextResponse(metrics.export_to_prometheus(), media_type="text/plain")
 
 
+class OrderAdmin(ModelView, model=Order):
+    column_list = [
+        Order.id,
+        Order.user_id,
+        Order.goods_id,
+        Order.status,
+        Order.total_cents,
+        Order.profit_cents,
+        Order.delivery_type,
+        Order.created_at,
+        Order.completed_at,
+    ]
+    column_sortable_list = [Order.id, Order.created_at, Order.status]
+    column_default_sort = (Order.id, True)
+    column_formatters = {
+        Order.total_cents: format_order_money,
+        Order.profit_cents: format_order_money,
+        Order.price_cents: format_order_money,
+        Order.discount_cents: format_order_money,
+        Order.cost_cents: format_order_money,
+    }
+    column_formatters_detail = column_formatters
+    column_details_list = [
+        Order.id,
+        Order.user_id,
+        Order.goods_id,
+        Order.quantity,
+        Order.status,
+        Order.price_cents,
+        Order.discount_cents,
+        Order.total_cents,
+        Order.cost_cents,
+        Order.fee_cents,
+        Order.referral_amount_cents,
+        Order.profit_cents,
+        Order.delivery_type,
+        Order.provider_id,
+        Order.provider_external_order_id,
+        Order.created_at,
+        Order.completed_at,
+    ]
+    can_create = False
+    can_delete = False
+    can_edit = False
+    name = "Order"
+    name_plural = "Orders"
+    icon = "fa-solid fa-receipt"
+
+    @action(
+        name="manual_refund",
+        label="Refund to balance",
+        confirmation_message="Credit order total to user balance and mark REFUNDED?",
+        add_in_list=True,
+        add_in_detail=True,
+    )
+    async def manual_refund_action(self, request: Request) -> RedirectResponse:
+        pks = (request.query_params.get("pks") or "").split(",")
+        operator_id = web_panel_operator_id()
+        messages: list[str] = []
+        for pk in pks:
+            pk = pk.strip()
+            if not pk:
+                continue
+            try:
+                oid = int(pk)
+            except ValueError:
+                continue
+            msg, _ = await run_manual_refund(oid, operator_id)
+            messages.append(msg)
+        flash = messages[0] if messages else "No order selected."
+        return RedirectResponse(
+            url=f"/admin/order/list?msg={escape(flash)[:200]}",
+            status_code=303,
+        )
+
+
+class SupportTicketAdmin(AuditModelView, model=SupportTicket):
+    column_list = [
+        SupportTicket.id,
+        SupportTicket.user_id,
+        SupportTicket.status,
+        SupportTicket.linked_order_id,
+        SupportTicket.updated_at,
+    ]
+    column_sortable_list = [SupportTicket.id, SupportTicket.updated_at]
+    form_columns = [SupportTicket.status]
+    can_create = False
+    can_delete = False
+    name = "Support Ticket"
+    name_plural = "Support Tickets"
+    icon = "fa-solid fa-life-ring"
+
+    async def on_model_change(
+        self, data: dict, model: Any, is_created: bool, request: Request
+    ) -> None:
+        from bot.database.models.support import TicketStatus
+
+        status = data.get("status")
+        if status and status not in TicketStatus.ALL:
+            raise ValueError(f"status must be one of: {', '.join(sorted(TicketStatus.ALL))}")
+
+
+class SupportMessageAdmin(ModelView, model=SupportMessage):
+    column_list = [
+        SupportMessage.id,
+        SupportMessage.ticket_id,
+        SupportMessage.author_role,
+        SupportMessage.author_user_id,
+        SupportMessage.body,
+        SupportMessage.created_at,
+    ]
+    column_sortable_list = [SupportMessage.id, SupportMessage.created_at]
+    can_create = False
+    can_edit = False
+    can_delete = False
+    name = "Support Message"
+    name_plural = "Support Messages"
+    icon = "fa-solid fa-comment-dots"
+
+
 async def metrics_json(request: Request) -> JSONResponse:
     if not request.session.get("authenticated"):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -814,10 +993,18 @@ def create_admin_app(bot: Any = None) -> Starlette:
     admin.add_view(PaymentGatewayAdmin)
     admin.add_view(PaymentInstrumentAdmin)
     admin.add_view(PaymentsAdmin)
+    admin.add_view(OrderAdmin)
     admin.add_view(ReferralEarningsAdmin)
     admin.add_view(AuditLogAdmin)
     admin.add_view(PromoCodeAdmin)
     admin.add_view(CartItemsAdmin)
+    admin.add_view(SupportTicketAdmin)
+    admin.add_view(SupportMessageAdmin)
+    from bot.web.panel_views import SalesStatsView, StockImportView, SupportReplyView
+
+    admin.add_view(SalesStatsView)
+    admin.add_view(StockImportView)
+    admin.add_view(SupportReplyView)
     if EnvKeys.REVIEWS_ENABLED == "1":
         admin.add_view(ReviewsAdmin)
 

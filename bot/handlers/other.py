@@ -41,25 +41,11 @@ async def get_bot_info(event) -> str:
     return me.username
 
 
-def _any_payment_method_enabled() -> bool:
-    """Is there at least one enabled payment method (env fallback)?"""
-    cryptopay_ok = bool(EnvKeys.CRYPTO_PAY_TOKEN)
-    tg_stars_ok = bool(EnvKeys.STARS_PER_VALUE)
-    tg_pay_ok = bool(EnvKeys.TELEGRAM_PROVIDER_TOKEN)
-    platega_ok = bool(EnvKeys.PLATEGA_MERCHANT_ID and EnvKeys.PLATEGA_SECRET)
-    return cryptopay_ok or tg_stars_ok or tg_pay_ok or platega_ok
-
-
 async def payment_methods_available() -> bool:
-    """Enabled instruments in DB, else env-based fallback."""
-    try:
-        from bot.payments.service import any_instrument_enabled
+    """At least one enabled, configured payment instrument (SQLAdmin / БД)."""
+    from bot.payments.service import any_instrument_enabled
 
-        if await any_instrument_enabled():
-            return True
-    except Exception:
-        pass
-    return _any_payment_method_enabled()
+    return await any_instrument_enabled()
 
 
 def _parse_channel_username() -> str | None:

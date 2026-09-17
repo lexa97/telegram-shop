@@ -66,7 +66,13 @@ class TestAssignRole:
 
         call = make_callback_query(data=f"asr_{admin_role}_800010", user_id=900010)
 
-        with patch('bot.handlers.admin.role_management.check_role_cached', new_callable=AsyncMock, return_value=1023):
+        from bot.database.models import Permission
+
+        with patch(
+            'bot.handlers.admin.role_management.check_role_cached',
+            new_callable=AsyncMock,
+            return_value=Permission.all_bits(),
+        ):
             await assign_role_confirm(call)
 
         call.message.edit_text.assert_called_once()

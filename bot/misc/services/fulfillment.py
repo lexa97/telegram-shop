@@ -32,6 +32,13 @@ from bot.providers.fulfillment import create_external_order
 from bot.providers.links import select_primary_link_for_session
 
 
+def _max_fulfillment_retries(link: GoodsProviderLink) -> int:
+    if link.retry_count is not None:
+        return max(1, int(link.retry_count))
+    provider = link.provider
+    return max(1, int(provider.default_retry_count or 3))
+
+
 class FulfillmentError(Exception):
     def __init__(self, code: str):
         self.code = code
@@ -196,6 +203,11 @@ async def fulfill_processing_order(
     try:
         provider_order = await create_external_order(session, order, link)
     except ProviderRetryableError:
+        order.fulfillment_attempt_count = int(order.fulfillment_attempt_count or 0) + 1
+        if order.fulfillment_attempt_count >= _max_fulfillment_retries(link):
+            await transition_order(session, order, OrderStatus.FAILED, actor_id=order.user_id)
+            await refund_failed_order(session, order, actor_id=order.user_id)
+            return FulfillTickResult(status="refunded")
         return FulfillTickResult(status="retry")
     except ProviderFatalError:
         await transition_order(session, order, OrderStatus.FAILED, actor_id=order.user_id)

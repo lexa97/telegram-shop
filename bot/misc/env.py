@@ -85,6 +85,10 @@ class EnvKeys(ABC):
     ADMIN_PASSWORD: Final = _get_optional("ADMIN_PASSWORD", _DEFAULT_ADMIN_PASSWORD)
     SECRET_KEY: Final = _get_optional("SECRET_KEY", _DEFAULT_SECRET_KEY)
     ADMIN_COOKIE_SECURE: Final = _get_optional("ADMIN_COOKIE_SECURE", "auto")
+    # When "1", SQLAdmin hides payment gateway secrets (OPERATOR-style panel login).
+    ADMIN_PANEL_OPERATOR: Final = _get_optional("ADMIN_PANEL_OPERATOR", "0")
+    # Telegram id used in audit for web panel staff actions (refund, support reply).
+    ADMIN_WEB_OPERATOR_ID: Final = _get_optional("ADMIN_WEB_OPERATOR_ID", "0")
 
     # Webhook
     WEBHOOK_ENABLED: Final = _get_optional("WEBHOOK_ENABLED", "0")
@@ -112,6 +116,10 @@ class EnvKeys(ABC):
             cls.ADMIN_HOST.strip().lower() not in _LOOPBACK_HOSTS
             or cls.WEBHOOK_ENABLED == "1"
         )
+
+    @classmethod
+    def admin_panel_operator_mode(cls) -> bool:
+        return cls.ADMIN_PANEL_OPERATOR.strip().lower() in ("1", "true", "yes")
 
     @classmethod
     def session_cookie_secure(cls) -> bool:

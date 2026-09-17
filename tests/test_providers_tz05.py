@@ -59,9 +59,8 @@ class TestWizardProvider:
     async def test_create_and_status_mocked(self):
         provider = WizardProvider(
             {
-                "base_url": "https://api.wizard.example",
+                "base_url": "https://api.wizard-bot.com/v1",
                 "api_key": "k",
-                "result_mapping": {"path": "delivery.value"},
             }
         )
         def _http_response(body: dict):
@@ -78,16 +77,26 @@ class TestWizardProvider:
             side_effect=[
                 _http_response(
                     {
-                        "id": "wiz-1",
-                        "status": "COMPLETED",
-                        "delivery": {"value": "secret-key"},
+                        "status": 201,
+                        "data": {
+                            "id": 123456,
+                            "status": "in_queue",
+                            "category": "stars",
+                            "recipient": "testuser",
+                            "quantity": 100,
+                        },
                     }
                 ),
                 _http_response(
                     {
-                        "id": "wiz-1",
-                        "status": "COMPLETED",
-                        "delivery": {"value": "secret-key"},
+                        "status": 200,
+                        "data": {
+                            "id": 123456,
+                            "status": "success",
+                            "category": "stars",
+                            "recipient": "testuser",
+                            "quantity": 100,
+                        },
                     }
                 ),
             ]
@@ -98,12 +107,18 @@ class TestWizardProvider:
 
         with patch("bot.providers.wizard.aiohttp.ClientSession", return_value=mock_sess_cm):
             created = await provider.create_order(
-                ProviderOrderRequest("p1", 1, idempotency_key="99")
+                ProviderOrderRequest(
+                    "stars",
+                    100,
+                    idempotency_key="99",
+                    request_params={"recipient": "testuser"},
+                )
             )
-            assert created.external_order_id == "wiz-1"
-            assert created.delivery_value == "secret-key"
-            st = await provider.get_order_status("wiz-1")
+            assert created.external_order_id == "123456"
+            assert created.delivery_value is None
+            st = await provider.get_order_status("123456")
             assert st.completed
+            assert st.delivery_value == "stars:100→@testuser"
 
 
 @pytest.mark.asyncio

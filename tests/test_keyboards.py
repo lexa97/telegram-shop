@@ -50,7 +50,7 @@ class TestMainMenu:
 
     @pytest.mark.parametrize("kwargs,expected", [
         ({"channel": "test_channel"}, True),
-        ({"helper": "12345"}, True),
+        ({"helper": "12345"}, False),  # support is in-bot callback, not tg://helper
         ({}, False),
     ])
     def test_url_buttons(self, kwargs, expected):

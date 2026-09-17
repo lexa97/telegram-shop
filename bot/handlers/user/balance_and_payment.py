@@ -7,7 +7,8 @@ from aiogram.types import CallbackQuery, Message, PreCheckoutQuery, SuccessfulPa
 from aiogram.fsm.context import FSMContext
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
-from bot.database.methods import get_user_referral, buy_item_transaction, process_payment_with_referral, create_pending_payment
+from bot.database.methods import get_user_referral, process_payment_with_referral, create_pending_payment
+from bot.handlers.user.purchase_ui import show_purchase_confirm, execute_confirmed_purchase
 from bot.keyboards import back, payment_menu, close, get_payment_choice, payment_choice_from_instruments
 from bot.logger_mesh import logger
 from bot.database.methods.audit import log_audit
@@ -21,6 +22,12 @@ from bot.payments.service import (
     list_enabled_instruments,
 )
 from bot.payments.gateways.platega import fetch_status as platega_fetch_status, gateway_config_from_json
+from bot.payments.gateway_settings import (
+    cryptopay_api_token,
+    gateway_is_configured,
+    stars_per_value,
+    telegram_provider_token,
+)
 from bot.misc.metrics import get_metrics
 from bot.misc.services import CryptoPayAPI, CryptoPayAPIError, send_stars_invoice, send_fiat_invoice
 from bot.misc.services.payment import _minor_units_for, payload_amount
@@ -151,7 +158,11 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
         await call.answer(localize("payments.not_configured"), show_alert=True)
         return
 
-    gateway_code = instrument.gateway.code
+    gateway = instrument.gateway
+    gateway_code = gateway.code
+    if not gateway_is_configured(gateway):
+        await call.answer(localize("payments.not_configured"), show_alert=True)
+        return
 
     try:
         amount_dec = Decimal(amount_cents) / Decimal(100)
@@ -198,12 +209,8 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
             return
 
         if gateway_code == "cryptopay":
-            if not EnvKeys.CRYPTO_PAY_TOKEN:
-                await call.answer(localize("payments.not_configured"), show_alert=True)
-                return
-
             try:
-                crypto = CryptoPayAPI()
+                crypto = CryptoPayAPI(cryptopay_api_token(gateway))
                 invoice = await crypto.create_invoice(
                     amount=float(amount_dec),
                     expires_in=ttl_seconds,
@@ -243,12 +250,14 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
             )
 
         elif gateway_code == "stars":
-            if EnvKeys.STARS_PER_VALUE > 0:
+            rate = stars_per_value(gateway)
+            if rate > 0:
                 try:
                     await send_stars_invoice(
                         bot=call.message.bot,
                         chat_id=call.from_user.id,
                         amount=int(amount_dec),
+                        stars_per_value=rate,
                     )
                 except Exception as e:
                     await log_audit("stars_invoice_fail", level="ERROR", user_id=call.from_user.id, resource_type="Payment", details=str(e))
@@ -260,7 +269,8 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                 return
 
         elif gateway_code == "telegram_fiat":
-            if not EnvKeys.TELEGRAM_PROVIDER_TOKEN:
+            provider_token = telegram_provider_token(gateway)
+            if not provider_token:
                 await call.answer(localize("payments.not_configured"), show_alert=True)
                 return
 
@@ -269,6 +279,7 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
                     bot=call.message.bot,
                     chat_id=call.from_user.id,
                     amount=int(amount_dec),
+                    provider_token=provider_token,
                 )
             except Exception as e:
                 await log_audit("fiat_invoice_fail", level="ERROR", user_id=call.from_user.id, resource_type="Payment", details=str(e))
@@ -303,7 +314,13 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
             return
 
         try:
-            crypto = CryptoPayAPI()
+            inst = await get_instrument_by_code("cryptopay")
+            gw = inst.gateway if inst else None
+            token = cryptopay_api_token(gw) if gw else None
+            if not token:
+                await call.answer(localize("payments.not_configured"), show_alert=True)
+                return
+            crypto = CryptoPayAPI(token)
             info = await crypto.get_invoice(invoice_id)
         except CryptoPayAPIError as e:
             await log_audit("cryptopay_check_error", level="ERROR", user_id=user_id, resource_type="Payment", details=f"[{e.code}] {e.name}")
@@ -481,8 +498,15 @@ async def successful_payment_handler(message: Message):
     if amount <= 0:
         if sp.currency == "XTR":
             # Stars, no usable payload: reverse the conversion as a last resort.
+            stars_inst = await get_instrument_by_code("stars")
+            rate = stars_per_value(stars_inst.gateway) if stars_inst else 0.0
+            if rate <= 0:
+                rate = float(EnvKeys.STARS_PER_VALUE or 0)
+            if rate <= 0:
+                await message.answer(localize("payments.unable_determine_amount"), reply_markup=close())
+                return
             amount = int(
-                (Decimal(int(sp.total_amount)) / Decimal(str(EnvKeys.STARS_PER_VALUE)))
+                (Decimal(int(sp.total_amount)) / Decimal(str(rate)))
                 .to_integral_value(rounding=ROUND_HALF_UP)
             )
         else:
@@ -557,137 +581,15 @@ async def successful_payment_handler(message: Message):
 
 @router.callback_query(F.data == "buy_item")
 async def buy_item_callback_handler(call: CallbackQuery, state: FSMContext):
-    """Processing the purchase of goods with full transactional security."""
+    """Show purchase confirmation (ТЗ-11)."""
+    await show_purchase_confirm(call, state)
+
+
+@router.callback_query(F.data == "buy_confirm")
+async def buy_confirm_handler(call: CallbackQuery, state: FSMContext):
+    """Execute purchase after user confirmation."""
     try:
-        # Get item name from state (stored when viewing item info)
-        data = await state.get_data()
-        raw_item_name = data.get('csrf_item')
-
-        if not raw_item_name:
-            await call.answer(localize("middleware.security.invalid_csrf"), show_alert=True)
-            return
-
-        metrics = get_metrics()
-
-        # Validation via Pydantic
-        purchase_request = ItemPurchaseRequest(
-            item_name=raw_item_name,
-            user_id=call.from_user.id
-        )
-
-        # Additional check for SQL injection
-        if not is_safe_item_name(purchase_request.item_name):
-            await call.answer(
-                localize("errors.invalid_item_name"),
-                show_alert=True
-            )
-            await log_audit("suspicious_item_name", level="WARNING", user_id=call.from_user.id, resource_type="Item", details=raw_item_name)
-            return
-
-        # User_id validation
-        try:
-            user_id = validate_telegram_id(call.from_user.id)
-        except ValueError:
-            await call.answer(localize("errors.invalid_user"), show_alert=True)
-            return
-
-        # Show the processing indicator
-        await call.answer(localize("shop.purchase.processing"))
-
-        # Get promo code from state if applied
-        promo_code = data.get('applied_promo')
-
-        # Execute a transactional purchase
-        success, message, purchase_data = await buy_item_transaction(
-            user_id,
-            purchase_request.item_name,
-            promo_code=promo_code,
-        )
-
-        if not success:
-            # Error handling
-            error_messages = {
-                "user_not_found": "shop.purchase.fail.user_not_found",
-                "item_not_found": "shop.item.not_found",
-                "insufficient_funds": "shop.insufficient_funds",
-                "out_of_stock": "shop.out_of_stock",
-                "promo_invalid": "promo.not_found",
-                "promo_expired": "promo.expired",
-                "promo_max_uses": "promo.max_uses_reached",
-                "promo_already_used": "promo.already_used",
-                "promo_min_order": "promo.min_order",
-                "promo_wrong_item": "promo.wrong_item",
-                "promo_wrong_category": "promo.wrong_category",
-            }
-
-            error_text = localize(
-                error_messages.get(message, "shop.purchase.fail.general"),
-                message=message
-            )
-
-            await call.message.edit_text(
-                error_text,
-                reply_markup=back('back_to_item')
-            )
-
-            if message not in error_messages:
-                await log_audit("purchase_error", level="ERROR", user_id=user_id, resource_type="Item", resource_id=purchase_request.item_name, details=message)
-            return
-
-        # Successful purchase - sanitize the output
-
-        if metrics:
-            metrics.track_event("purchase", call.from_user.id, {
-                "item": purchase_request.item_name,
-                "price": purchase_data['price']
-            })
-            metrics.track_conversion("purchase_funnel", "purchase", call.from_user.id)
-
-        # Escaped, never "sanitized": a delivered value is data the buyer copies
-        # verbatim, so a key that happens to contain <b> must show as <b>.
-        safe_value = esc(purchase_data['value'])
-        username = esc(call.from_user.username or call.from_user.first_name)
-
-        # The promo was consumed by this purchase
-        await state.update_data(applied_promo=None)
-
-        from bot.keyboards.inline import simple_buttons
-        buttons = [
-            (f"📦 {purchase_data['item_name']}", f"bought-item:{purchase_data['bought_id']}:back_to_item"),
-            (localize("btn.back"), "back_to_item"),
-        ]
-
-        await call.message.edit_text(
-            localize(
-                'shop.purchase.receipt',
-                item_name=esc(purchase_data['item_name']),
-                price=purchase_data['price'],
-                unique_id=purchase_data['unique_id'],
-                datetime=purchase_data['bought_datetime'],
-                username=username,
-                user_id=call.from_user.id,
-                value=safe_value,
-                currency=EnvKeys.PAY_CURRENCY,
-            ),
-            parse_mode='HTML',
-            reply_markup=simple_buttons(buttons),
-        )
-
-        safe_create_task(log_audit(
-            "purchase",
-            user_id=user_id,
-            resource_type="Item",
-            resource_id=purchase_request.item_name[:100],
-            details=(
-                f"name={caller_name(call)[:50]}, "
-                f"price={purchase_data['price']} {EnvKeys.PAY_CURRENCY}, "
-                f"unique_id={purchase_data['unique_id']}"
-            ),
-        ))
-
+        await execute_confirmed_purchase(call, state)
     except Exception as e:
         logger.error(f"Critical error in purchase handler: {e}")
-        await call.answer(
-            localize("errors.something_wrong"),
-            show_alert=True
-        )
+        await call.answer(localize("errors.something_wrong"), show_alert=True)

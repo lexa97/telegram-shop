@@ -7,6 +7,7 @@ from bot.database.models import (
     Categories, Goods, User, BoughtGoods, ItemValues,
     ReferralEarnings, Operations
 )
+from bot.database.models.orders import Order
 from bot.database.models.main import PromoCodes, Reviews
 from bot.misc.caching import get_cache_manager
 
@@ -99,6 +100,43 @@ async def query_goods_search(query: str, offset: int = 0, limit: int = 10,
             base.order_by(Goods.name.asc()).offset(offset).limit(limit)
         )
         return [row[0] for row in result.all()]
+
+
+async def query_user_orders(
+    user_id: int, offset: int = 0, limit: int = 10, count_only: bool = False
+) -> Any:
+    """User orders newest first (ТЗ-11 history)."""
+    if count_only:
+        async def _count():
+            async with Database().session() as s:
+                return (
+                    await s.execute(
+                        select(func.count()).select_from(Order).where(Order.user_id == user_id)
+                    )
+                ).scalar() or 0
+        return await _cached_count(f"count:orders:{user_id}", _count)
+
+    async with Database().session() as s:
+        result = await s.execute(
+            select(Order, Goods.name)
+            .join(Goods, Goods.id == Order.goods_id)
+            .where(Order.user_id == user_id)
+            .order_by(desc(Order.id))
+            .offset(offset)
+            .limit(limit)
+        )
+        rows = []
+        for order, goods_name in result.all():
+            rows.append(
+                {
+                    "id": order.id,
+                    "status": order.status,
+                    "goods_name": goods_name,
+                    "total_cents": order.total_cents,
+                    "created_at": order.created_at,
+                }
+            )
+        return rows
 
 
 async def query_user_bought_items(user_id: int, offset: int = 0, limit: int = 10, count_only: bool = False) -> Any:

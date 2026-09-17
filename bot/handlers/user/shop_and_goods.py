@@ -22,6 +22,8 @@ from bot.database.methods.create import create_review, subscribe_to_stock
 from bot.database.methods.delete import unsubscribe_from_stock
 from bot.database.methods.lazy_queries import query_item_reviews, query_goods_search, query_items_in_category
 from bot.database.methods.transactions import redeem_balance_promo
+from bot.catalog.enums import FulfillmentType
+from bot.handlers.user.purchase_ui import build_purchase_confirm
 from bot.money import format_cents_for_ui
 from bot.database.methods.audit import log_audit_bg
 from bot.database.models import Permission
@@ -141,20 +143,31 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
             "shop.item.price", amount=format_cents_for_ui(price), currency=EnvKeys.PAY_CURRENCY,
         )
 
+    allows_gift = bool(item_info_data.get("allows_gift"))
+    fulfillment = item_info_data.get("fulfillment_type") or FulfillmentType.STOCK
+    if fulfillment == FulfillmentType.API:
+        fulfillment_line = localize("shop.item.fulfillment_api")
+    else:
+        fulfillment_line = localize("shop.item.fulfillment_stock")
+
     markup = item_info(
         back_data,
         avg_rating=avg_rating, review_count=review_count_val,
         has_purchased=purchased, applied_promo=applied_promo,
         reviews_enabled=reviews_enabled,
         out_of_stock=out_of_stock, subscribed=subscribed,
+        allows_gift=allows_gift,
     )
 
     text_lines = [
         localize("shop.item.title", name=esc(item_name)),
         localize("shop.item.description", description=esc(item_info_data["description"])),
+        fulfillment_line,
         price_line,
         quantity_line,
     ]
+    if allows_gift:
+        text_lines.append(localize("shop.item.gift_available"))
     if reviews_enabled and avg_rating is not None:
         text_lines.append(localize("review.avg_rating", rating=avg_rating, count=review_count_val))
 
@@ -738,6 +751,51 @@ async def view_reviews_handler(call: CallbackQuery, state: FSMContext):
     kb.row(InlineKeyboardButton(text=localize("btn.back"), callback_data="back_to_item"))
 
     await call.message.edit_text("\n".join(lines), reply_markup=kb.as_markup())
+
+
+# --- Gift purchase (ТЗ-11) ---
+
+@router.callback_query(F.data == "buy_gift")
+async def buy_gift_start(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    item_name = data.get("csrf_item")
+    if not item_name:
+        await call.answer(localize("middleware.security.invalid_csrf"), show_alert=True)
+        return
+    item_info_data = await get_item_info_cached(item_name)
+    if not item_info_data or not item_info_data.get("allows_gift"):
+        await call.answer(localize("shop.gift.not_allowed"), show_alert=True)
+        return
+    await state.set_state(ShopStates.waiting_gift_recipient)
+    await call.message.edit_text(
+        localize("shop.gift.prompt_recipient"),
+        reply_markup=back("back_to_item"),
+    )
+
+
+@router.message(ShopStates.waiting_gift_recipient, F.text)
+async def buy_gift_recipient_message(message: Message, state: FSMContext):
+    raw = (message.text or "").strip().lstrip("@")
+    try:
+        recipient_id = int(raw)
+    except ValueError:
+        await message.answer(
+            localize("shop.gift.invalid_recipient"),
+            reply_markup=back("back_to_item"),
+        )
+        return
+    data = await state.get_data()
+    item_name = data.get("csrf_item")
+    if not item_name:
+        await message.answer(localize("middleware.security.invalid_csrf"))
+        return
+    built = await build_purchase_confirm(state, item_name, gift_recipient_id=recipient_id)
+    if not built:
+        await message.answer(localize("shop.item.not_found"))
+        return
+    text, markup = built
+    await state.set_state(ShopStates.viewing_goods)
+    await message.answer(text, parse_mode="HTML", reply_markup=markup)
 
 
 # --- Bought items ---

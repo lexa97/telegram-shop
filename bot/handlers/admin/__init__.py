@@ -9,6 +9,7 @@ from .user_management import router as user_management_router
 from .role_management import router as role_management_router
 from .promo_management import router as promo_management_router
 from .sale_management import router as sale_management_router
+from .support import router as support_management_router
 
 from aiogram import Router
 
@@ -24,3 +25,4 @@ router.include_router(user_management_router)
 router.include_router(role_management_router)
 router.include_router(promo_management_router)
 router.include_router(sale_management_router)
+router.include_router(support_management_router)

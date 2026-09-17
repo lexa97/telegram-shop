@@ -109,15 +109,20 @@ def setup_test_database():
     db = Database()
 
     async def _setup():
-        import bot.database.models  # noqa: F401 — register Order tables on metadata
+        import bot.database.models  # noqa: F401 — register ORM tables on metadata
+        import bot.database.models.support  # noqa: F401
         async with db.engine.begin() as conn:
             await conn.run_sync(Database.BASE.metadata.create_all)
         from bot.database.models.main import Role
         await Role.insert_roles()
         from bot.database.methods.fulfillment_seed import seed_fulfillment_providers
-        from bot.database.methods.payment_config import seed_default_payment_config
+        from bot.database.methods.payment_config import (
+            seed_default_payment_config,
+            seed_test_payment_credentials,
+        )
         await seed_fulfillment_providers()
         await seed_default_payment_config()
+        await seed_test_payment_credentials()
 
     asyncio.run(_setup())
 
@@ -134,9 +139,13 @@ async def db_cleanup(setup_test_database):
     (except roles which are session-scoped).
     """
     from bot.database.methods.fulfillment_seed import seed_fulfillment_providers
-    from bot.database.methods.payment_config import seed_default_payment_config
+    from bot.database.methods.payment_config import (
+        seed_default_payment_config,
+        seed_test_payment_credentials,
+    )
     await seed_fulfillment_providers()
     await seed_default_payment_config()
+    await seed_test_payment_credentials()
 
     yield
 
@@ -148,10 +157,13 @@ async def db_cleanup(setup_test_database):
         StockSubscriptions,
     )
     from bot.database.models.orders import OrderStatusHistory, Order
+    from bot.database.models.support import SupportMessage, SupportTicket
 
     db = Database()
     async with db.session() as s:
         # Delete in FK order.
+        await s.execute(delete(SupportMessage))
+        await s.execute(delete(SupportTicket))
         await s.execute(delete(Reviews))
         await s.execute(delete(StockSubscriptions))
         await s.execute(delete(CartItems))
@@ -174,7 +186,9 @@ async def db_cleanup(setup_test_database):
         await s.execute(delete(Categories))
         await s.execute(delete(User))
         # Delete custom roles (keep built-in)
-        await s.execute(delete(Role).where(Role.name.notin_(['USER', 'ADMIN', 'OWNER'])))
+        await s.execute(delete(Role).where(Role.name.notin_(
+            ['USER', 'ADMIN', 'SUPERADMIN', 'OPERATOR', 'MANAGER']
+        )))
 
 
 @pytest.fixture(autouse=True)

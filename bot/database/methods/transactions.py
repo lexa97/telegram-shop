@@ -23,6 +23,7 @@ from bot.database.methods.audit import log_audit
 from bot.catalog.enums import FulfillmentType
 from bot.catalog.stock import (
     StockAllocationError,
+    assert_gift_purchase_allowed,
     consume_stock_units,
     count_finite_available_units,
 )
@@ -101,6 +102,23 @@ async def buy_item_transaction(
                     )).scalars().one_or_none()
                     if not goods:
                         raise _Abort("item_not_found")
+
+                    if gift_recipient_telegram_id is not None:
+                        try:
+                            assert_gift_purchase_allowed(goods, gift_recipient_telegram_id)
+                        except StockAllocationError as exc:
+                            raise _Abort(exc.code)
+                        if gift_recipient_telegram_id == telegram_id:
+                            raise _Abort("gift_recipient_not_registered")
+                        recipient_row = (
+                            await s.execute(
+                                select(User.telegram_id).where(
+                                    User.telegram_id == gift_recipient_telegram_id
+                                )
+                            )
+                        ).scalar_one_or_none()
+                        if recipient_row is None:
+                            raise _Abort("gift_recipient_not_registered")
 
                     price, _on_sale, _original_price = effective_price(goods)
                     final_price = price
