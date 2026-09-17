@@ -15,6 +15,56 @@
 
 ---
 
+## 2026-09-17 — ТЗ-10: SQLAdmin web-панель (§13)
+
+**Ветка:** `cursor/admin-panel-tz10-03eb` → `main` (включает merge ТЗ-09)
+
+### Сделали
+
+- Заказы: `OrderAdmin` (read-only), action **Refund** → `manual_refund_order` + audit.
+- Статистика: `SalesStatsView` — revenue/profit по `profit_cents` для `COMPLETED`.
+- Склад: `StockImportView` → `add_values_bulk`, отчёт added/skipped.
+- Тикеты: list/edit status + `SupportReplyView` → `staff_reply` + Telegram notify.
+- Поставщики: `AuditModelView`, JSON-валидация `config_json` / `request_params` / `result_mapping`.
+- Платежи: gateway secrets masked; `ADMIN_PANEL_OPERATOR=1` скрывает `config_json` в форме.
+- `ADMIN_WEB_OPERATOR_ID` для audit web-действий.
+
+### Чеклист §13 (экран / view)
+
+| Пункт | View |
+|-------|------|
+| Пользователи, баланс | `UserAdmin` |
+| Товары, категории | `GoodsAdmin`, `CategoryAdmin` |
+| Склад + массовая загрузка | `ItemValuesAdmin`, `StockImportView` |
+| API-поставщики, связи | `FulfillmentProviderAdmin`, `GoodsProviderLinkAdmin` |
+| Заказы | `OrderAdmin` |
+| Платежи | `PaymentsAdmin` |
+| Промо, рефералы | `PromoCodeAdmin`, `ReferralEarningsAdmin` |
+| Обращения | `SupportTicketAdmin`, `SupportMessageAdmin`, `SupportReplyView` |
+| Статистика | `SalesStatsView` |
+| Роли | `RoleAdmin` |
+| Аудит | `AuditLogAdmin` |
+| Инструменты/шлюзы | `PaymentInstrumentAdmin`, `PaymentGatewayAdmin` |
+
+### Обсуждали
+
+- SQLAdmin остаётся на env-логин; «OPERATOR без секретов» — через `ADMIN_PANEL_OPERATOR`, не через Telegram-роль в сессии.
+
+### Отвергли
+
+- *Отдельный SPA админки* — *причина:* ТЗ-10.
+
+### Проверка
+
+- `pytest tests/test_admin_panel_tz10.py`
+- `pytest`
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — ТЗ-08: роли SUPERADMIN / ADMIN / OPERATOR / MANAGER
 
 **Ветка:** `cursor/rbac-tz08-03eb` → `main` (PR #13, смержено)
