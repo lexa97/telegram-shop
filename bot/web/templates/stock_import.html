@@ -1,0 +1,49 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-xl py-3">
+
+  <div class="mb-3 text-muted">
+    Массовая загрузка ключей/аккаунтов в склад через <code>add_values_bulk</code> (ТЗ-03).
+    Альтернатива — по одной строке в
+    <a href="/admin/item-values/list">Stock Items</a>
+    или кнопка «Bulk stock import» в списке товаров.
+  </div>
+
+  {% if flash_message %}
+  <div class="alert alert-{{ 'danger' if flash_error else 'success' }} mb-3" role="alert">
+    {{ flash_message }}
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Импорт на склад</h3></div>
+    <div class="card-body">
+      <form method="post" action="/admin/stock-import{% if selected_goods_id %}?goods_id={{ selected_goods_id }}{% endif %}">
+        <div class="mb-3">
+          <label class="form-label">Товар</label>
+          <select class="form-select" name="item_name" required>
+            <option value="">— выберите товар —</option>
+            {% for g in goods %}
+            <option value="{{ g.name }}" {% if g.id == selected_goods_id or g.name == selected_item_name %}selected{% endif %}>
+              {{ g.name }} (id={{ g.id }})
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Значения склада (по одному на строку)</label>
+          <textarea class="form-control" name="values_text" rows="14" placeholder="key1&#10;key2&#10;...">{{ values_text }}</textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_infinity" {% if is_infinity %}checked{% endif %} />
+            <span class="form-check-label">Безлимитный склад (одно значение на все покупки)</span>
+          </label>
+        </div>
+        <button type="submit" class="btn btn-primary">Импортировать</button>
+      </form>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

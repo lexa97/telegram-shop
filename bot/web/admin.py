@@ -330,6 +330,7 @@ class CategoryAdmin(AuditModelView, model=Categories):
     name = "Category"
     name_plural = "Categories"
     icon = "fa-solid fa-folder"
+    category = "Catalog"
 
 
 class GoodsAdmin(AuditModelView, model=Goods):
@@ -356,6 +357,23 @@ class GoodsAdmin(AuditModelView, model=Goods):
             ),
         },
     }
+    category = "Catalog"
+
+    @action(
+        name="bulk_stock_import",
+        label="Bulk stock import",
+        add_in_list=True,
+        add_in_detail=True,
+    )
+    async def bulk_stock_import_action(self, request: Request) -> RedirectResponse:
+        pks = (request.query_params.get("pks") or "").split(",")
+        goods_id = next((p.strip() for p in pks if p.strip()), "")
+        if not goods_id:
+            return RedirectResponse(url="/admin/stock-import", status_code=303)
+        return RedirectResponse(
+            url=f"/admin/stock-import?goods_id={goods_id}",
+            status_code=303,
+        )
 
     async def _invalidate(self, model: Any) -> None:
         name = getattr(model, "name", None)
@@ -381,6 +399,7 @@ class ItemValuesAdmin(AuditModelView, model=ItemValues):
     name = "Stock Item"
     name_plural = "Stock Items"
     icon = "fa-solid fa-warehouse"
+    category = "Catalog"
 
     async def _item_name(self, model: Any) -> str | None:
         item_id = getattr(model, "item_id", None)
