@@ -15,6 +15,60 @@
 
 ---
 
+## 2026-09-17 — INT-001: магазин → корзина → пополнение → checkout
+
+**Ветка:** `cursor/integration-tests-scaffold-987a` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/11
+
+### Сделали
+
+- Сценарий в `docs/testing/integration-scenarios.md` (статус `done`).
+- `tests/integration/test_int_001_shop_cart_topup_checkout.py` — полный mock-поток.
+- `tests/integration/helpers.py` — шаги «магазин → карточка → в корзину».
+
+### Обсуждали
+
+- «Разные типы товаров» — два finite-ключа + один unlimited (infinity) STOCK; API-товар в INT-001 не включали (отдельный сценарий позже).
+
+### Проверка
+
+- `pytest tests/integration/test_int_001_shop_cart_topup_checkout.py -v` — PASS.
+
+---
+
+## 2026-09-17 — Каркас интеграционных тестов (сценарии → pytest)
+
+**Ветка:** `cursor/integration-tests-scaffold-987a` → `main`  
+**PR:** https://github.com/lexa97/telegram-shop/pull/11
+
+### Сделали
+
+- `docs/testing/` — README workflow, `integration-scenarios.md` (реестр + шаблон сценариев INT-xxx).
+- `tests/integration/` — `conftest.py` с маркером `integration`, README для разработчиков.
+- `pytest.ini` — регистрация маркера `integration`.
+- Корневой README и `docs/README.md` — ссылки на раздел.
+
+### Обсуждали
+
+- Реальный Telegram / webhook E2E не нужен для цели «логика»; интеграция = mock Bot API + цепочки шагов, как в существующем `tests/conftest.py`.
+- Сценарии пишет заказчик/команда в markdown; код переносится по статусу `ready` → `done`.
+
+### Отвергли
+
+- *Отдельный CI job только для integration* — *причина:* полный `pytest` включает каталог; при необходимости позже `-m "not integration"`.
+- *Обязательный placeholder-тест* — *причина:* пустой каталог нормален до появления сценариев.
+
+### Проверка
+
+- `pytest` — полный suite без регрессий.
+- `pytest tests/integration/` — INT-001 (`test_full_purchase_flow`).
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — Платежи: конфиг только через админку (ТЗ-04)
 
 **Ветка:** `cursor/payments-admin-config-03eb` → `main`
