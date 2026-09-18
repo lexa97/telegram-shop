@@ -648,7 +648,13 @@ services are mocked (Telegram Bot API, CryptoPay, Redis). What's covered:
   limit (a long or Cyrillic product name used to overflow it), and every pagination prefix a view
   produces has a handler registered for it, so an arrow button can't be a dead end.
 
+**Integration scenarios (mock Telegram)** — multi-step user/admin flows documented in
+[`docs/testing/integration-scenarios.md`](docs/testing/integration-scenarios.md) and implemented under
+`tests/integration/` (same in-memory DB and mocked Bot API as the rest of the suite). They run with the
+full `pytest` invocation; only integration tests: `pytest tests/integration/`.
+
 ```bash
 pytest                                          # full suite
+pytest tests/integration/                       # integration flows only
 pytest --cov=bot --cov-report=term-missing      # with the coverage report
 ```
