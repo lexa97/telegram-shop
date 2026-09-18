@@ -15,6 +15,36 @@
 
 ---
 
+## 2026-09-18 — ТЗ-03: UX массового импорта склада в SQLAdmin
+
+**Ветка:** `cursor/stock-import-admin-ux-03eb` → `main`
+
+### Сделали
+
+- `StockImportView` рендерит `stock_import.html` с `layout.html` (сайдбар SQLAdmin), не `_page_shell`.
+- Категория **Catalog**: товары, категории, Stock Items, Stock import.
+- У `GoodsAdmin` action **Bulk stock import** → `/admin/stock-import?goods_id=…` с предвыбранным товаром.
+- Общий хелпер `bot/web/panel_template.py` (`render_admin_page`).
+
+### Обсуждали
+
+- Та же «голая» форма, что у старого Support reply — оператор теряет контекст панели.
+
+### Отвергли
+
+- *Только ссылка в help без правки view* — *причина:* проблема в рендере, не в навигации.
+
+### Проверка
+
+- `pytest tests/test_stock_import_admin_ux.py tests/test_catalog_stock.py`
+- Админка: **Catalog → Products** → выбрать товар → **Bulk stock import**.
+
+### Graphify
+
+- После merge: `./devtools/graphify/refresh-after-merge.sh`.
+
+---
+
 ## 2026-09-17 — INT-001: магазин → корзина → пополнение → checkout
 
 **Ветка:** `cursor/integration-tests-scaffold-987a` → `main`  
