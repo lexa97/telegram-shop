@@ -1,0 +1,111 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container-xl py-3">
+
+  {% if flash_message %}
+  <div class="alert alert-{{ 'danger' if flash_error else 'success' }} mb-3" role="alert">
+    {{ flash_message }}
+  </div>
+  {% endif %}
+
+  {% if not ticket %}
+  <div class="mb-3">
+    <p class="text-muted mb-2">
+      Откройте тикет из списка
+      <a href="/admin/support-ticket/list">Support Tickets</a>
+      (кнопка «Messages &amp; reply») или выберите строку ниже.
+    </p>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Активные обращения</h3></div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>User</th>
+            <th>Status</th>
+            <th>Order</th>
+            <th>Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in ticket_rows %}
+          <tr>
+            <td>{{ row.id }}</td>
+            <td><code>{{ row.user_id }}</code></td>
+            <td>{{ row.status }}</td>
+            <td>{% if row.linked_order_id %}{{ row.linked_order_id }}{% else %}—{% endif %}</td>
+            <td>{{ row.updated_at }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-primary" href="/admin/support-reply?ticket_id={{ row.id }}">Открыть</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-muted">Нет тикетов.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="mb-3">
+    <a href="/admin/support-ticket/list">← Support Tickets</a>
+    ·
+    <a href="/admin/support-ticket/edit/{{ ticket.id }}">Изменить статус</a>
+    ·
+    <a href="/admin/support-message/list?search={{ ticket.id }}">Все сообщения (поиск)</a>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">
+      <h3 class="card-title">Тикет #{{ ticket.id }}</h3>
+      <div class="card-subtitle text-muted">
+        Пользователь <code>{{ ticket.user_id }}</code>,
+        статус <strong>{{ ticket.status }}</strong>
+        {% if ticket.linked_order_id %}· заказ #{{ ticket.linked_order_id }}{% endif %}
+      </div>
+    </div>
+    <div class="card-body">
+      {% for msg in messages %}
+      <div class="mb-3 p-3 rounded border {% if msg.author_role == 'staff' %}bg-azure-lt{% else %}bg-secondary-lt{% endif %}">
+        <div class="text-muted small mb-1">
+          {{ msg.author_role }}
+          {% if msg.author_user_id %}· <code>{{ msg.author_user_id }}</code>{% endif %}
+          · {{ msg.created_at }}
+        </div>
+        <div style="white-space: pre-wrap;">{{ msg.body }}</div>
+      </div>
+      {% else %}
+      <p class="text-muted">Сообщений пока нет.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  {% if ticket.status != 'closed' %}
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Ответ пользователю</h3></div>
+    <div class="card-body">
+      <form method="post" action="/admin/support-reply?ticket_id={{ ticket.id }}">
+        <input type="hidden" name="ticket_id" value="{{ ticket.id }}" />
+        <input type="hidden" name="staff_id" value="{{ staff_id }}" />
+        <div class="mb-3">
+          <label class="form-label">Текст ответа</label>
+          <textarea class="form-control" name="body" rows="6" required placeholder="Ответ уйдёт в Telegram и сохранится в тикете."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Отправить</button>
+      </form>
+      <p class="text-muted small mt-2 mb-0">
+        Оператор для аудита: <code>{{ staff_id }}</code> (из <code>ADMIN_WEB_OPERATOR_ID</code>).
+      </p>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-warning">Тикет закрыт — новые ответы недоступны. Смените статус в редактировании тикета.</div>
+  {% endif %}
+  {% endif %}
+
+</div>
+{% endblock %}
