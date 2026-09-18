@@ -8,6 +8,8 @@ from sqladmin import BaseView, expose
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, RedirectResponse
 
+from bot.web.panel_template import render_admin_page
+
 from bot.database import Database
 from bot.database.methods.create import add_values_bulk
 from bot.database.models.main import Goods
@@ -58,24 +60,30 @@ class SalesStatsView(BaseView):
 class StockImportView(BaseView):
     name = "Stock import"
     icon = "fa-solid fa-file-import"
+    category = "Catalog"
 
     @expose("/stock-import", methods=["GET", "POST"])
-    async def stock_import(self, request: Request) -> HTMLResponse:
-        message = ""
-        error = False
-        goods_options = ""
+    async def stock_import(self, request: Request):
+        flash_message = ""
+        flash_error = False
+        values_text = ""
+        is_infinity = False
+        selected_goods_id = 0
+        selected_item_name = ""
 
-        async with Database().session() as session:
-            rows = (
-                await session.execute(select(Goods.id, Goods.name).order_by(Goods.name))
-            ).all()
-        for gid, name in rows:
-            goods_options += f'<option value="{escape(name)}">{escape(name)} (id={gid})</option>\n'
+        goods_id_raw = request.query_params.get("goods_id") or ""
+        try:
+            selected_goods_id = int(goods_id_raw) if goods_id_raw else 0
+        except ValueError:
+            selected_goods_id = 0
+        selected_item_name = (request.query_params.get("item_name") or "").strip()
 
         if request.method == "POST":
             form = await request.form()
             item_name = (form.get("item_name") or "").strip()
+            selected_item_name = item_name
             raw = form.get("values_text") or ""
+            values_text = raw
             is_infinity = form.get("is_infinity") == "on"
             lines = raw.replace("\r\n", "\n").split("\n")
 
@@ -83,37 +91,44 @@ class StockImportView(BaseView):
                 item_name, lines, is_infinity=is_infinity
             )
             if not item_name:
-                message = "Select a product."
-                error = True
+                flash_message = "Выберите товар."
+                flash_error = True
             elif added == 0 and skip_db == 0 and skip_batch == 0 and skip_invalid == len(lines):
-                message = "No valid lines to import."
-                error = True
+                flash_message = "Нет валидных строк для импорта."
+                flash_error = True
             else:
-                message = (
-                    f"Added {added}; skipped duplicates in DB: {skip_db}; "
-                    f"duplicates in batch: {skip_batch}; invalid/empty: {skip_invalid}."
+                flash_message = (
+                    f"Добавлено: {added}; дубликаты в БД: {skip_db}; "
+                    f"дубликаты в файле: {skip_batch}; пустые/невалидные: {skip_invalid}."
                 )
-        msg_html = ""
-        if message:
-            cls = "msg err" if error else "msg"
-            msg_html = f'<div class="{cls}">{escape(message)}</div>'
+                if not flash_error:
+                    values_text = ""
 
-        body = f"""
-{msg_html}
-<form method="post">
-<label>Product (by name)</label>
-<select name="item_name" required>
-<option value="">— choose —</option>
-{goods_options}
-</select>
-<label>Stock values (one per line)</label>
-<textarea name="values_text" rows="12" placeholder="key1&#10;key2&#10;..."></textarea>
-<label><input type="checkbox" name="is_infinity"> Unlimited stock (single shared value)</label>
-<button type="submit">Import</button>
-</form>
-<p>Uses <code>add_values_bulk</code> (ТЗ-03).</p>
-"""
-        return HTMLResponse(_page_shell("Bulk stock import", body))
+        async with Database().session() as session:
+            rows = (
+                await session.execute(select(Goods.id, Goods.name).order_by(Goods.name))
+            ).all()
+        goods = [{"id": gid, "name": name} for gid, name in rows]
+        if selected_goods_id and not selected_item_name:
+            for g in goods:
+                if g["id"] == selected_goods_id:
+                    selected_item_name = g["name"]
+                    break
+
+        return await render_admin_page(
+            self,
+            request,
+            "stock_import.html",
+            title="Catalog",
+            subtitle="Массовый импорт склада",
+            goods=goods,
+            flash_message=flash_message,
+            flash_error=flash_error,
+            values_text=values_text,
+            is_infinity=is_infinity,
+            selected_goods_id=selected_goods_id,
+            selected_item_name=selected_item_name,
+        )
 
 
 class SupportReplyView(BaseView):
