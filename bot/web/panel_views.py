@@ -116,20 +116,58 @@ class StockImportView(BaseView):
         return HTMLResponse(_page_shell("Bulk stock import", body))
 
 
+_SUPPORT_ERROR_TEXT = {
+    "support.not_found": "Тикет не найден.",
+    "support.ticket_closed": "Тикет закрыт — сначала смените статус.",
+}
+
+
+def _support_flash(code_or_text: str) -> tuple[str, bool]:
+    if code_or_text in _SUPPORT_ERROR_TEXT:
+        return _SUPPORT_ERROR_TEXT[code_or_text], True
+    return code_or_text, False
+
+
 class SupportReplyView(BaseView):
+    """Переписка и ответ оператора (открывается из Support Tickets, не из меню)."""
+
     name = "Support reply"
     icon = "fa-solid fa-reply"
+    category = "Support"
+
+    def is_visible(self, request: Request) -> bool:
+        return False
+
+    async def _template(
+        self, request: Request, context: dict
+    ):
+        base = {
+            "admin": self._admin_ref,
+            "title": "Support",
+            "subtitle": "Переписка и ответ",
+            "request": request,
+        }
+        base.update(context)
+        return await self.templates.TemplateResponse(
+            request, "support_reply.html", base
+        )
 
     @expose("/support-reply", methods=["GET", "POST"])
-    async def support_reply(self, request: Request) -> HTMLResponse:
-        from bot.database.methods.support import SupportError, staff_reply
+    async def support_reply(self, request: Request):
+        from bot.database.methods.support import (
+            SupportError,
+            get_ticket_for_staff,
+            list_tickets_for_staff,
+            staff_reply,
+        )
         from bot.database.methods.audit import log_audit
         from bot.web.admin import _notifier_bot
         from bot.i18n import localize
+        from bot.web.admin_helpers import web_panel_operator_id
 
-        ticket_id_raw = request.query_params.get("ticket_id") or ""
-        message = ""
-        error = False
+        staff_id = web_panel_operator_id()
+        flash_message = ""
+        flash_error = False
 
         if request.method == "POST":
             form = await request.form()
@@ -138,27 +176,24 @@ class SupportReplyView(BaseView):
             except ValueError:
                 ticket_id = 0
             body = form.get("body") or ""
-            staff_id = int(form.get("staff_id") or "0")
+            try:
+                form_staff = int(form.get("staff_id") or staff_id)
+            except ValueError:
+                form_staff = staff_id
 
             try:
                 async with Database().session() as session:
-                    msg = await staff_reply(session, ticket_id, staff_id, body)
-                    ticket = msg.ticket if hasattr(msg, "ticket") else None
-                    if ticket is None:
-                        from bot.database.methods.support import get_ticket_for_staff
-
-                        ticket = await get_ticket_for_staff(session, ticket_id)
+                    msg = await staff_reply(session, ticket_id, form_staff, body)
+                    ticket = await get_ticket_for_staff(session, ticket_id)
                     target_user = ticket.user_id if ticket else None
                     body_text = msg.body
                     await session.commit()
             except SupportError as exc:
-                message = exc.code
-                error = True
+                flash_message, flash_error = _support_flash(exc.code)
             else:
-                message = "Reply saved."
                 await log_audit(
                     "support_reply_web",
-                    user_id=staff_id,
+                    user_id=form_staff,
                     resource_type="SupportTicket",
                     resource_id=str(ticket_id),
                 )
@@ -177,29 +212,38 @@ class SupportReplyView(BaseView):
                 )
 
         if request.query_params.get("ok") == "1":
-            message = "Reply sent to user (if Telegram delivery succeeded)."
+            flash_message = "Ответ сохранён и отправлен пользователю (если Telegram доставил сообщение)."
+        ticket_id_raw = request.query_params.get("ticket_id") or ""
         try:
             ticket_id = int(ticket_id_raw) if ticket_id_raw else 0
         except ValueError:
             ticket_id = 0
 
-        from bot.web.admin_helpers import web_panel_operator_id
+        ticket = None
+        messages = []
+        ticket_rows = []
 
-        default_staff = web_panel_operator_id()
-        msg_html = ""
-        if message:
-            msg_html = f'<div class="msg{" err" if error else ""}">{escape(message)}</div>'
+        async with Database().session() as session:
+            if ticket_id:
+                ticket = await get_ticket_for_staff(session, ticket_id)
+                if ticket is None:
+                    flash_message, flash_error = _support_flash("support.not_found")
+                else:
+                    messages = sorted(
+                        ticket.messages,
+                        key=lambda m: m.created_at or "",
+                    )
+            else:
+                ticket_rows = await list_tickets_for_staff(session, limit=50)
 
-        body = f"""
-{msg_html}
-<form method="post">
-<label>Ticket ID</label>
-<input name="ticket_id" value="{ticket_id or ""}" required />
-<label>Staff Telegram ID (audit)</label>
-<input name="staff_id" value="{default_staff}" required />
-<label>Message</label>
-<textarea name="body" rows="6" required></textarea>
-<button type="submit">Send reply</button>
-</form>
-"""
-        return HTMLResponse(_page_shell("Support reply", body))
+        return await self._template(
+            request,
+            {
+                "ticket": ticket,
+                "messages": messages,
+                "ticket_rows": ticket_rows,
+                "staff_id": staff_id,
+                "flash_message": flash_message,
+                "flash_error": flash_error,
+            },
+        )

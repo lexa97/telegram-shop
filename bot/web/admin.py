@@ -904,6 +904,23 @@ class SupportTicketAdmin(AuditModelView, model=SupportTicket):
     name = "Support Ticket"
     name_plural = "Support Tickets"
     icon = "fa-solid fa-life-ring"
+    category = "Support"
+
+    @action(
+        name="messages_reply",
+        label="Messages & reply",
+        add_in_list=True,
+        add_in_detail=True,
+    )
+    async def messages_reply_action(self, request: Request) -> RedirectResponse:
+        pks = (request.query_params.get("pks") or "").split(",")
+        ticket_id = next((p.strip() for p in pks if p.strip()), "")
+        if not ticket_id:
+            return RedirectResponse(url="/admin/support-reply", status_code=303)
+        return RedirectResponse(
+            url=f"/admin/support-reply?ticket_id={ticket_id}",
+            status_code=303,
+        )
 
     async def on_model_change(
         self, data: dict, model: Any, is_created: bool, request: Request
@@ -931,6 +948,7 @@ class SupportMessageAdmin(ModelView, model=SupportMessage):
     name = "Support Message"
     name_plural = "Support Messages"
     icon = "fa-solid fa-comment-dots"
+    category = "Support"
 
 
 async def metrics_json(request: Request) -> JSONResponse:
